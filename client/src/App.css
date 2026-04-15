@@ -1,0 +1,106 @@
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* flex 버그 방지 */
+  position: relative;
+}
+
+/* Header */
+.app-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-xl);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.app-header__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.app-header__active-badge {
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.app-header__active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Area for dual panels */
+.app-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.app-panel-wrapper {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  height: 100%;
+}
+
+.app-panel-wrapper:first-child {
+  border-right: 1px solid var(--border-subtle);
+}
+
+/* Global Sync Input (Optional, currently using individual inputs) */
+.app-sync-input {
+  position: absolute;
+  bottom: var(--space-xl);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  max-width: 800px;
+  z-index: 100;
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-lg);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-focus);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .app-content {
+    flex-direction: column;
+  }
+  
+  .app-panel-wrapper {
+    height: 50%;
+  }
+
+  .app-panel-wrapper:first-child {
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+}

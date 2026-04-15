@@ -1,0 +1,117 @@
+/* ===== Input Bar ===== */
+
+.input-bar {
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.input-bar__container {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-lg);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.input-bar__container:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow-pro);
+}
+
+.input-bar__container--flash:focus-within {
+  border-color: rgba(245, 158, 11, 0.5);
+  box-shadow: var(--shadow-glow-flash);
+}
+
+.input-bar__input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  resize: none;
+  min-height: 24px;
+  max-height: 120px;
+  padding: var(--space-sm) 0;
+}
+
+.input-bar__input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.input-bar__send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--accent-pro);
+  color: white;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.input-bar__send:hover:not(:disabled) {
+  background: #4f46e5;
+  transform: scale(1.05);
+}
+
+.input-bar__send:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.input-bar__send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.input-bar__send--flash {
+  background: var(--accent-flash);
+}
+
+.input-bar__send--flash:hover:not(:disabled) {
+  background: #d97706;
+}
+
+.input-bar__send svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Quick suggestions */
+.input-bar__suggestions {
+  display: flex;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-xl) 0;
+  overflow-x: auto;
+  flex-wrap: wrap;
+}
+
+.input-bar__suggestion {
+  font-size: var(--text-xs);
+  padding: var(--space-xs) var(--space-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  font-family: var(--font-sans);
+}
+
+.input-bar__suggestion:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
