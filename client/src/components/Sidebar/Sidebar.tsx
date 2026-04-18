@@ -1,16 +1,17 @@
-import type { SessionGroup } from '../../types';
+import type { SessionGroup, UsageInfo } from '../../types';
 
 /**
  * 세션 관리 사이드바
  *
  * groups: 통합된 세션 그룹 목록
  */
-export default function Sidebar({ groups, activeGroupId, onGroupSelect, onNewSession, onToggle }: {
+export default function Sidebar({ groups, activeGroupId, onGroupSelect, onNewSession, onToggle, usage }: {
   groups: SessionGroup[];
   activeGroupId: string | null;
   onGroupSelect: (groupId: string) => void;
   onNewSession: () => void;
   onToggle: () => void;
+  usage?: UsageInfo;
 }) {
   const formatRelativeTime = (dateStr: string) => {
     if (!dateStr) return '';
@@ -27,6 +28,8 @@ export default function Sidebar({ groups, activeGroupId, onGroupSelect, onNewSes
     if (diffDay < 7) return `${diffDay}일 전`;
     return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
   };
+
+  const usagePercent = usage ? Math.min(100, (usage.used / usage.budget) * 100) : 0;
 
   return (
     <aside className="w-[280px] bg-bg-secondary flex flex-col h-full overflow-hidden" id="sidebar">
@@ -50,6 +53,38 @@ export default function Sidebar({ groups, activeGroupId, onGroupSelect, onNewSes
             <path d="M19 12H5M12 19l-7-7 7-7" />
           </svg>
         </button>
+      </div>
+
+      {/* Usage Stats Dashboard */}
+      <div className="px-6 py-5 border-b border-border-subtle shrink-0">
+        <div className="flex items-center justify-between mb-2.5">
+          <div className="flex items-center gap-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-text-tertiary">
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+            </svg>
+            <span className="text-[11px] font-bold text-text-tertiary uppercase tracking-wider">Usage</span>
+          </div>
+          <span className="text-[11px] font-mono font-medium text-accent-pro">
+            ${usage?.used.toFixed(2)} / ${usage?.budget.toFixed(2)}
+          </span>
+        </div>
+        
+        {/* Progress Bar Container */}
+        <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden relative">
+          <div 
+            className="h-full bg-linear-to-r from-accent-pro to-purple-500 transition-all duration-700 ease-out relative"
+            style={{ width: `${usagePercent}%` }}
+          >
+            <div className="absolute top-0 right-0 h-full w-4 flex items-center">
+              <div className="w-1 h-3 bg-white/20 blur-[2px] rounded-full" />
+            </div>
+          </div>
+        </div>
+        
+        <div className="mt-2 text-[10px] text-text-tertiary/70 leading-relaxed font-medium">
+          {usagePercent > 80 ? '⚠️ 예산이 얼마 남지 않았습니다.' : '대회 참여를 위한 사용량이 집계 중입니다.'}
+        </div>
       </div>
 
       {/* Sessions */}

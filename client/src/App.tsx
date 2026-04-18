@@ -3,9 +3,9 @@ import Sidebar from './components/Sidebar/Sidebar';
 import ChatPanel from './components/ChatPanel/ChatPanel';
 import LoginPage from './components/Login/LoginPage';
 import { useChat } from './hooks/useChat';
-import { fetchChats } from './services/api';
+import { fetchChats, fetchUsage } from './services/api';
 import { getUserUuid, isAuthenticated } from './services/auth';
-import type { SessionGroup, ChatListItem } from './types';
+import type { SessionGroup, ChatListItem, UsageInfo } from './types';
 
 /** 세션 그룹화 유틸리티 */
 function groupChats(items: ChatListItem[]): SessionGroup[] {
@@ -62,6 +62,8 @@ export default function App() {
   // 인증 상태
   const [isReady, setIsReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // 사용량 상태
+  const [usage, setUsage] = useState<UsageInfo>();
   // 사이드바 상태
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -72,11 +74,11 @@ export default function App() {
   // 듀얼 채팅 훅 (새로운 chatId 생성 시 그룹 갱신)
   const proChat = useChat('chat', (id) => {
     if (!activeGroupId) setActiveGroupId(id);
-    refreshSessions();
+    refreshData();
   });
   const flashChat = useChat('image', (id) => {
     if (!activeGroupId) setActiveGroupId(id);
-    refreshSessions();
+    refreshData();
   });
 
   // 앱 초기화: 인증 확인 + 세션 로드
@@ -89,8 +91,12 @@ export default function App() {
         if (authed) {
           const uuid = getUserUuid();
           if (uuid) {
-            const chats = await fetchChats(uuid);
+            const [chats, usageData] = await Promise.all([
+              fetchChats(uuid),
+              fetchUsage(uuid)
+            ]);
             setSessionGroups(groupChats(chats));
+            setUsage(usageData);
           }
         }
       } catch (error) {
@@ -107,18 +113,26 @@ export default function App() {
     setIsLoggedIn(true);
     const uuid = getUserUuid();
     if (uuid) {
-      const chats = await fetchChats(uuid);
+      const [chats, usageData] = await Promise.all([
+        fetchChats(uuid),
+        fetchUsage(uuid)
+      ]);
       setSessionGroups(groupChats(chats));
+      setUsage(usageData);
     }
   }, []);
 
-  // 세션 목록 새로고침
-  const refreshSessions = useCallback(async () => {
+  // 세션 목록 및 사용량 새로고침
+  const refreshData = useCallback(async () => {
     const uuid = getUserUuid();
     if (!uuid) return;
     try {
-      const chats = await fetchChats(uuid);
+      const [chats, usageData] = await Promise.all([
+        fetchChats(uuid),
+        fetchUsage(uuid)
+      ]);
       setSessionGroups(groupChats(chats));
+      setUsage(usageData);
     } catch { /* 무시 */ }
   }, []);
 
@@ -147,15 +161,15 @@ export default function App() {
     // 현재 세션 그룹의 짝꿍 ID가 있으면 같이 전달하여 명시적으로 묶음
     const partnerId = flashChat.chatId || undefined;
     await proChat.sendMessage(text, files, partnerId);
-    setTimeout(refreshSessions, 500);
-  }, [proChat, flashChat.chatId, refreshSessions]);
+    setTimeout(refreshData, 500);
+  }, [proChat, flashChat.chatId, refreshData]);
 
   const handleFlashSend = useCallback(async (text: string, files?: File[]) => {
     // 현재 세션 그룹의 짝꿍 ID가 있으면 같이 전달하여 명시적으로 묶음
     const partnerId = proChat.chatId || undefined;
     await flashChat.sendMessage(text, files, partnerId);
-    setTimeout(refreshSessions, 500);
-  }, [flashChat, proChat.chatId, refreshSessions]);
+    setTimeout(refreshData, 500);
+  }, [flashChat, proChat.chatId, refreshData]);
 
   // 초기화 중 로딩 표시
   if (!isReady) {
@@ -187,6 +201,7 @@ export default function App() {
           onGroupSelect={handleSessionSelect}
           onNewSession={handleNewSession}
           onToggle={() => setIsSidebarOpen(false)}
+          usage={usage}
         />
       </div>
       

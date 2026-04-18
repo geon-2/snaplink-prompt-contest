@@ -10,6 +10,7 @@ import type {
   ChatListItem,
   ChatDetailResponse,
   ApiMessage,
+  UsageInfo,
 } from '../types';
 
 const STORAGE_KEYS = {
@@ -228,6 +229,19 @@ export async function fetchChatDetail(chatId: string, uuid: string): Promise<Cha
 
   if (!localChat) throw new Error('Chat not found');
   return { chat: localChat, messages: localMessages };
+}
+
+/**
+ * GET /usage (SessionStorage + API Fallback Mock)
+ */
+export async function fetchUsage(_uuid: string): Promise<UsageInfo> {
+  await new Promise(r => setTimeout(r, 150));
+  
+  // 모의 데이터: 실제로는 서버에서 가져와야 함
+  return {
+    used: 1.28 + Math.random() * 0.5,
+    budget: 5.00
+  };
 }
 
 

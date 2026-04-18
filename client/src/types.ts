@@ -116,3 +116,9 @@ export interface ChatCompletionParams {
   onDone: () => void;
   onError: (data: SSEErrorEvent) => void;
 }
+
+/** 사용량 정보 */
+export interface UsageInfo {
+  used: number;    // 사용 금액 ($)
+  budget: number;  // 할당 예산 ($)
+}
