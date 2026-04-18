@@ -77,10 +77,10 @@ export default function InputBar({
   };
 
   return (
-    <div className="px-6 py-5 bg-bg-secondary border-t border-border-subtle shrink-0 w-full relative">
+    <div className="px-6 py-5 bg-white border-t border-border-default shrink-0 w-full relative shadow-[0_-4px_24px_-12px_rgba(0,0,0,0.05)]">
       {/* 유효성 검사 에러 메시지 */}
       {showError && (
-        <div className="absolute top-0 left-11 -translate-y-1/2 bg-red-500 text-white text-[11px] px-2.5 py-1 rounded-md shadow-lg animate-[fadeIn_0.2s_ease-out] z-20">
+        <div className="absolute top-0 left-11 -translate-y-full bg-red-500 text-white text-[11px] px-3 py-1.5 rounded-lg shadow-xl animate-fadeIn z-20 mb-2 font-bold">
           메시지를 입력해주세요!
         </div>
       )}
@@ -91,16 +91,16 @@ export default function InputBar({
           {filesToUpload.map((file, i) => (
             <div
               key={i}
-              className="relative shrink-0 group"
+              className="relative shrink-0 group border-2 border-slate-100 rounded-xl p-1 bg-white shadow-sm"
             >
               <img
                 src={previews[i]}
                 alt={file.name}
-                className="w-[72px] h-[72px] object-cover rounded-xl border border-border-subtle"
+                className="w-16 h-16 object-cover rounded-lg"
               />
               {/* 삭제 버튼 — 이미지 우상단 */}
               <button
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-bg-primary border border-border-subtle flex items-center justify-center text-[10px] text-text-tertiary hover:text-red-400 hover:border-red-400/50 transition-all shadow-sm"
+                className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-slate-200 flex items-center justify-center text-[10px] text-slate-400 hover:text-red-500 hover:border-red-200 transition-all shadow-md z-10"
                 onClick={() => handleRemoveFile(i)}
                 type="button"
               >
@@ -111,16 +111,16 @@ export default function InputBar({
         </div>
       )}
 
-      <div className={`flex items-center gap-3 bg-bg-tertiary border rounded-[18px] p-2.5 pl-5 transition-all ${showError ? 'border-red-500/80 animate-shake ring-4 ring-red-500/10' : 'border-border-default focus-within:border-border-focus'} ${variant === 'flash' ? 'focus-within:border-amber-500/50 focus-within:shadow-glow-flash' : 'focus-within:shadow-glow-pro'}`}>
+      <div className={`flex items-center gap-4 bg-slate-50 border rounded-2xl p-2.5 pl-5 transition-all outline-none ${showError ? 'border-red-400 animate-shake ring-4 ring-red-400/10' : 'border-slate-200 focus-within:border-accent-pro/40 focus-within:ring-4 focus-within:ring-accent-pro/5 focus-within:bg-white'}`}>
         {/* 파일 첨부 버튼 */}
         <button
-          className="flex items-center justify-center w-9 h-9 min-w-9 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-surface-hover transition-all shrink-0"
+          className="flex items-center justify-center w-9 h-9 min-w-9 rounded-lg text-slate-400 hover:text-accent-pro hover:bg-accent-pro/10 transition-all shrink-0"
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled}
           type="button"
           aria-label="이미지 첨부"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
             <circle cx="8.5" cy="8.5" r="1.5" />
             <polyline points="21 15 16 10 5 21" />
@@ -137,7 +137,7 @@ export default function InputBar({
 
         <textarea
           ref={textareaRef}
-          className="flex-1 bg-transparent border-none outline-none text-text-primary font-sans text-[14px] leading-normal resize-none min-h-[24px] max-h-[120px] py-2 px-0 placeholder:text-text-tertiary scrollbar-thin scrollbar-thumb-border-default scrollbar-track-transparent flex items-center pt-[10px]"
+          className="flex-1 bg-transparent border-none outline-none text-text-primary font-bold text-[14px] leading-relaxed resize-none min-h-[44px] max-h-[140px] py-3 px-0 placeholder:text-slate-400 flex items-center"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -147,7 +147,7 @@ export default function InputBar({
           id={`input-${variant}`}
         />
         <button
-          className={`flex items-center justify-center w-11 h-11 min-w-11 rounded-xl border-none text-white cursor-pointer transition-all shrink-0 hover:not-disabled:scale-105 active:not-disabled:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${isLoading ? 'bg-red-500 hover:bg-red-600' : (variant === 'flash' ? 'bg-accent-flash hover:not-disabled:bg-[#d97706]' : 'bg-accent-pro hover:not-disabled:bg-[#4f46e5]')}`}
+          className={`flex items-center justify-center w-11 h-11 min-w-11 rounded-xl shadow-lg transition-all shrink-0 disabled:opacity-40 disabled:cursor-not-allowed text-white ${isLoading ? 'bg-red-500 shadow-red-500/20' : (variant === 'flash' ? 'bg-accent-flash shadow-accent-flash/20' : 'bg-accent-pro shadow-accent-pro/20 hover:scale-105 active:scale-95')}`}
           onClick={isLoading ? onStop : handleSubmit}
           disabled={!isLoading && (disabled || !value.trim())}
           aria-label={isLoading ? '생성 중단' : '메시지 전송'}
@@ -155,10 +155,10 @@ export default function InputBar({
         >
           {isLoading ? (
             <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]">
-              <rect x="6" y="6" width="12" height="12" rx="1.5" />
+              <rect x="7" y="7" width="10" height="10" rx="1.5" />
             </svg>
           ) : (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
               <line x1="22" y1="2" x2="11" y2="13" />
               <polygon points="22 2 15 22 11 13 2 9 22 2" />
             </svg>

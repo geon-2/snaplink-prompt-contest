@@ -3,28 +3,28 @@
 @source "../src";
 
 @theme {
-  --color-bg-primary: #0a0a0f;
-  --color-bg-secondary: #12121a;
-  --color-bg-tertiary: #1a1a2e;
-  --color-bg-elevated: #16213e;
-  --color-bg-surface: rgba(255, 255, 255, 0.03);
-  --color-bg-surface-hover: rgba(255, 255, 255, 0.06);
+  --color-bg-primary: #f8fafc;
+  --color-bg-secondary: #ffffff;
+  --color-bg-tertiary: #f1f5f9;
+  --color-bg-elevated: #ffffff;
+  --color-bg-surface: rgba(0, 169, 128, 0.04);
+  --color-bg-surface-hover: rgba(0, 169, 128, 0.08);
 
-  --color-accent-pro: #6366f1;
-  --color-accent-pro-dim: rgba(99, 102, 241, 0.15);
-  --color-accent-flash: #f59e0b;
-  --color-accent-flash-dim: rgba(245, 158, 11, 0.15);
+  --color-accent-pro: #00A980;
+  --color-accent-pro-dim: rgba(0, 169, 128, 0.1);
+  --color-accent-flash: #14b8a6;
+  --color-accent-flash-dim: rgba(20, 184, 166, 0.1);
 
-  --color-text-primary: #e8e8ed;
-  --color-text-secondary: #9ca3af;
-  --color-text-tertiary: #6b7280;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94a3b8;
 
-  --color-border-default: rgba(255, 255, 255, 0.1);
-  --color-border-subtle: rgba(255, 255, 255, 0.06);
-  --color-border-focus: rgba(99, 102, 241, 0.5);
+  --color-border-default: #e2e8f0;
+  --color-border-subtle: #f1f5f9;
+  --color-border-focus: rgba(0, 169, 128, 0.3);
 
-  --shadow-glow-pro: 0 0 20px rgba(99, 102, 241, 0.15);
-  --shadow-glow-flash: 0 0 20px rgba(245, 158, 11, 0.15);
+  --shadow-glow-pro: 0 0 20px rgba(0, 169, 128, 0.1);
+  --shadow-glow-flash: 0 0 20px rgba(20, 184, 166, 0.1);
 }
 
 html {
@@ -125,10 +125,10 @@ body {
   animation: shake 0.2s ease-in-out 0s 2 alternate;
 }
 
-/* ===== Luxury Theme Utilities ===== */
+/* ===== Snaplink Theme Utilities ===== */
 @layer utilities {
   .bg-aurora {
-    background: linear-gradient(135deg, #020617 0%, #0f172a 50%, #020617 100%);
+    background: linear-gradient(135deg, #f0fdf4 0%, #f8fafc 50%, #f0fdf4 100%);
     position: relative;
     overflow: hidden;
   }
@@ -141,33 +141,33 @@ body {
     left: -50%;
     width: 200%;
     height: 200%;
-    background: radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
-                radial-gradient(circle, rgba(56, 189, 248, 0.1) 0%, transparent 50%),
-                radial-gradient(circle, rgba(236, 72, 153, 0.05) 0%, transparent 50%);
+    background: radial-gradient(circle, rgba(0, 169, 128, 0.08) 0%, transparent 50%),
+                radial-gradient(circle, rgba(20, 184, 166, 0.08) 0%, transparent 50%),
+                radial-gradient(circle, rgba(16, 185, 129, 0.06) 0%, transparent 50%);
     z-index: 0;
     pointer-events: none;
-    animation: aurora 25s linear infinite;
+    animation: aurora 30s linear infinite;
   }
 
   .bg-aurora::after {
-    animation-delay: -12s;
-    opacity: 0.6;
-    animation-duration: 30s;
+    animation-delay: -15s;
+    opacity: 0.5;
+    animation-duration: 35s;
   }
 
   @keyframes aurora {
     0% { transform: rotate(0deg) scale(1); }
-    50% { transform: rotate(180deg) scale(1.1); }
+    50% { transform: rotate(180deg) scale(1.05); }
     100% { transform: rotate(360deg) scale(1); }
   }
 
   .glass-card {
-    background: rgba(15, 23, 42, 0.65);
+    background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 25px 70px -15px rgba(0, 0, 0, 0.6),
-                inset 0 1px 1px rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.05),
+                inset 0 1px 1px rgba(255, 255, 255, 0.9);
   }
 
   .glass-card-accent {
@@ -181,7 +181,7 @@ body {
     inset: -1px;
     border-radius: inherit;
     padding: 1.5px;
-    background: linear-gradient(to bottom right, rgba(99, 102, 241, 0.4), transparent, rgba(168, 85, 247, 0.4));
+    background: linear-gradient(to bottom right, rgba(0, 169, 128, 0.3), transparent, rgba(20, 184, 166, 0.3));
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
@@ -190,12 +190,12 @@ body {
   }
 
   .float-animation {
-    animation: float 6s ease-in-out infinite;
+    animation: float 8s ease-in-out infinite;
   }
 
   @keyframes float {
     0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
+    50% { transform: translateY(-12px); }
   }
 }
 

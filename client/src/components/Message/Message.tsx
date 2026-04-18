@@ -30,16 +30,16 @@ export default function Message({ message, variant = 'pro', onEdit, onCopy }: an
 
     let html = text
       // 볼드
-      .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-text-primary">$1</strong>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="font-extrabold text-text-primary">$1</strong>')
       // 인라인 코드
-      .replace(/`([^`]+)`/g, '<code class="font-mono bg-white/10 px-[6px] py-[2px] rounded-[4px] text-[0.85em]">$1</code>')
+      .replace(/`([^`]+)`/g, '<code class="font-mono bg-slate-100 border border-slate-200 px-[6px] py-[2px] rounded-[4px] text-[0.85em] text-accent-pro">$1</code>')
       // 코드 블록
-      .replace(/```([\s\S]*?)```/g, '<pre class="bg-black/30 border border-border-subtle rounded-xl p-[12px] my-[8px] overflow-x-auto font-mono text-[13px] leading-[1.5]"><code class="bg-transparent p-0 text-text-primary">$1</code></pre>')
+      .replace(/```([\s\S]*?)```/g, '<pre class="bg-slate-50 border border-border-default rounded-xl p-[16px] my-[10px] overflow-x-auto font-mono text-[13px] leading-relaxed shadow-inner"><code class="bg-transparent p-0 text-text-primary">$1</code></pre>')
       // 헤더
-      .replace(/^## (.+)$/gm, '<strong style="font-size: 1.05em; display: block; margin-top: 8px;">$1</strong>')
-      .replace(/^> (.+)$/gm, '<blockquote class="border-l-[3px] border-border-default pl-[12px] text-text-secondary my-[8px] italic">$1</blockquote>');
+      .replace(/^## (.+)$/gm, '<strong class="text-[17px] font-black block mt-6 mb-2 text-text-primary">$1</strong>')
+      .replace(/^> (.+)$/gm, '<blockquote class="border-l-4 border-accent-pro/30 bg-accent-pro/[0.03] pl-4 py-2 text-text-secondary my-4 font-medium italic">$1</blockquote>');
 
-    return <span dangerouslySetInnerHTML={{ __html: html }} className="break-words whitespace-pre-wrap leading-[1.6]" />;
+    return <span dangerouslySetInnerHTML={{ __html: html }} className="break-words whitespace-pre-wrap leading-[1.7]" />;
   };
 
   // S3 key → URL 변환 (AI 생성 이미지용)
@@ -48,27 +48,28 @@ export default function Message({ message, variant = 'pro', onEdit, onCopy }: an
   return (
     <div
       ref={contentRef}
-      className={`flex gap-4 px-7 py-5 animate-[fadeIn_0.3s_ease-out] w-full ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
+      className={`flex gap-4 px-6 py-6 animate-fadeIn w-full ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
     >
       {/* Avatar */}
-      <div className={`w-9 h-9 min-w-[36px] rounded-full flex flex-col items-center justify-center text-[14px] font-semibold shrink-0 mt-[2px] ${isUser ? 'bg-[#4f46e5] text-white' : variant === 'pro' ? 'bg-accent-pro-dim text-accent-pro border border-indigo-500/20' : 'bg-accent-flash-dim text-accent-flash border border-amber-500/20'}`}>
+      <div className={`w-10 h-10 min-w-[40px] rounded-2xl flex flex-col items-center justify-center text-[16px] font-bold shrink-0 shadow-sm border ${isUser ? 'bg-accent-pro border-accent-pro/20 text-white' : variant === 'pro' ? 'bg-white text-accent-pro border-accent-pro/20' : 'bg-white text-accent-flash border-accent-flash/20'}`}>
         {isUser ? '👤' : variant === 'pro' ? '✦' : '🎨'}
       </div>
 
       {/* Content Wrapper */}
-      <div className={`max-w-[85%] relative min-w-0 flex flex-col group`}>
-        <div className={`relative ${isUser ? 'bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] text-white px-6 py-4 rounded-t-2xl rounded-bl-2xl rounded-br-lg text-[14px] leading-[1.7] shadow-[0_4px_12px_rgba(0,0,0,0.4)]' : 'bg-bg-surface border border-border-subtle px-5 py-4 rounded-t-2xl rounded-br-2xl rounded-bl-lg text-[14px] leading-[1.7] text-text-primary'} ${isError ? 'border-red-500/30 bg-red-500/5' : ''}`}>
+      <div className={`max-w-[80%] relative min-w-0 flex flex-col group`}>
+        <div className={`relative px-5 py-4 rounded-3xl ${isUser ? 'bg-accent-pro text-white font-bold rounded-tr-sm shadow-lg shadow-accent-pro/10' : 'bg-white border border-border-default rounded-tl-sm text-text-primary shadow-sm'} ${isError ? 'border-red-200 bg-red-50 text-red-500' : ''}`}>
           
           {/* 사용자가 첨부한 이미지들 (텍스트 위) */}
           {isUser && attachedImages && attachedImages.length > 0 && (
             <div className={`flex flex-wrap gap-2 mb-3 ${content ? '' : 'mb-0'}`}>
               {attachedImages.map((img: string, i: number) => (
-                <img
-                  key={i}
-                  src={img}
-                  alt="첨부 이미지"
-                  className="max-w-[200px] max-h-[200px] object-cover rounded-lg border border-white/20 shadow-sm"
-                />
+                <div key={i} className="rounded-xl overflow-hidden border-2 border-white/20 shadow-md">
+                  <img
+                    src={img}
+                    alt="첨부 이미지"
+                    className="max-w-[220px] max-h-[220px] object-cover"
+                  />
+                </div>
               ))}
             </div>
           )}
@@ -76,43 +77,46 @@ export default function Message({ message, variant = 'pro', onEdit, onCopy }: an
           {/* 텍스트 스트리밍 중 */}
           {isStreaming && !content && (
             <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-[6px] py-2">
-                <div className="w-[6px] h-[6px] rounded-full bg-text-tertiary animate-[typing_1.4s_infinite_0s]" />
-                <div className="w-[6px] h-[6px] rounded-full bg-text-tertiary animate-[typing_1.4s_infinite_0.2s]" />
-                <div className="w-[6px] h-[6px] rounded-full bg-text-tertiary animate-[typing_1.4s_infinite_0.4s]" />
+              <div className="flex items-center gap-[6px] py-1.5 px-1">
+                <div className="w-2 h-2 rounded-full bg-accent-pro/40 animate-pulse" />
+                <div className="w-2 h-2 rounded-full bg-accent-pro/30 animate-pulse delay-75" />
+                <div className="w-2 h-2 rounded-full bg-accent-pro/20 animate-pulse delay-150" />
               </div>
             </div>
           )}
 
           {/* 이미지 생성 중 (AI) */}
           {!isUser && isGenerating && (
-            <div className="flex flex-col items-center justify-center gap-3 py-12 px-6 min-h-[200px] bg-bg-tertiary rounded-xl border border-dashed border-border-default">
-              <div className="w-10 h-10 border-4 border-t-accent-flash border-border-subtle rounded-full animate-spin" />
-              <div className="text-[13px] text-text-secondary text-center">
-                🎨 나노바나나가 이미지를 생성하고 있습니다...
+            <div className="flex flex-col items-center justify-center gap-4 py-12 px-8 min-h-[240px] bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+              <div className="relative">
+                <div className="w-12 h-12 border-4 border-accent-flash border-t-transparent rounded-full animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center text-lg">🎨</div>
               </div>
-              <div className="w-[120px] h-[3px] bg-bg-secondary rounded-full overflow-hidden mt-1 relative">
-                <div className="absolute top-0 left-0 h-full w-[60%] bg-gradient-to-r from-accent-flash to-[#fbbf24] rounded-full animate-[shimmer_2s_ease-in-out_infinite] bg-[length:200%_100%]" />
+              <div className="text-[14px] font-black text-slate-500 text-center uppercase tracking-wide">
+                Image Generation in Progress...
+              </div>
+              <div className="w-[160px] h-[4px] bg-slate-200 rounded-full overflow-hidden mt-1 relative">
+                <div className="absolute top-0 left-0 h-full w-[40%] bg-accent-flash rounded-full animate-[shimmer_1.5s_infinite]" />
               </div>
             </div>
           )}
 
           {/* 실제 텍스트 컨텐츠 */}
           {content && (
-            <div className="break-words whitespace-pre-wrap">
+            <div className={`break-words whitespace-pre-wrap text-[14.5px] leading-relaxed ${isUser ? 'text-white' : 'text-text-primary'}`}>
               {isUser ? content : renderContent(content)}
-              {isStreaming && content && <span className="inline-block w-[2px] h-[1.1em] bg-accent-pro ml-[2px] align-text-bottom animate-pulse" />}
+              {isStreaming && content && <span className="inline-block w-[2.5px] h-[1.1em] bg-accent-pro ml-1 align-middle animate-pulse" />}
             </div>
           )}
         </div>
 
         {/* AI가 생성한 이미지 (기존 유지) */}
         {!isUser && aiImageUrl && !isGenerating && (
-          <div className="mt-4 rounded-xl overflow-hidden relative bg-bg-tertiary self-start">
+          <div className="mt-4 rounded-2xl overflow-hidden relative self-start bg-slate-100 border border-slate-200 shadow-xl group/img max-w-[480px]">
             <img
               src={aiImageUrl}
               alt="생성된 이미지"
-              className={`block w-full max-w-[400px] h-auto rounded-xl transition-all duration-400 ease-out shadow-lg ${imageLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+              className={`block w-full h-auto rounded-2xl transition-all duration-700 ease-out ${imageLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
               onLoad={() => setImageLoaded(true)}
               loading="lazy"
             />
@@ -120,22 +124,22 @@ export default function Message({ message, variant = 'pro', onEdit, onCopy }: an
         )}
 
         {/* 하단 영역 (타임스탬프 + 액션 버튼) */}
-        <div className="relative mt-2 min-h-[24px] flex items-center">
-          {/* 타임스탬프: 사용자(좌측), AI(우측) */}
-          <span className={`text-[11px] text-text-tertiary/60 font-medium ${isUser ? 'mr-auto' : 'ml-auto'}`}>
+        <div className={`relative mt-2 min-h-[24px] flex items-center ${isUser ? 'flex-row' : 'flex-row-reverse'}`}>
+          {/* 타임스탬프 */}
+          <span className="text-[10px] font-black text-text-tertiary uppercase tracking-wider opacity-60">
             {!isStreaming && !isGenerating && formatTime(timestamp)}
           </span>
 
           {/* 액션 버튼: 아이콘 형태 (복사, 수정) */}
           {isUser && !isStreaming && !isGenerating && (
-            <div className="absolute right-0 top-0 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all duration-200 translate-y-1 group-hover:translate-y-0 pointer-events-none group-hover:pointer-events-auto bg-bg-primary/40 backdrop-blur-md px-1.5 py-1 rounded-lg border border-border-subtle/50 shadow-sm">
+            <div className="absolute right-0 top-0 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none group-hover:pointer-events-auto bg-white/80 backdrop-blur-sm px-2 py-1 rounded-xl border border-slate-200 shadow-sm">
               {/* 복사 버튼 */}
               <button 
-                className="w-7 h-7 flex items-center justify-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-surface-hover transition-all"
+                className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-accent-pro hover:bg-accent-pro/10 transition-colors"
                 onClick={() => onCopy && onCopy(content)}
                 title="복사"
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[14px] h-[14px]">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-[13px] h-[13px]">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                 </svg>
