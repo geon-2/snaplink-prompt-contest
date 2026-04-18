@@ -1,4 +1,5 @@
 import type { SessionGroup, UsageInfo } from '../../types';
+import logo from '../../assets/logo.svg';
 
 /**
  * 세션 관리 사이드바
@@ -37,7 +38,7 @@ export default function Sidebar({ groups, activeGroupId, onGroupSelect, onNewSes
       <div className="px-6 py-8 border-b border-border-subtle shrink-0 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 flex items-center justify-center">
-            <img src="/logo.png" alt="S" className="w-full h-full object-contain" onError={(e) => {
+            <img src={logo} alt="S" className="w-full h-full object-contain" onError={(e) => {
               (e.target as any).style.display = 'none';
               (e.target as any).parentElement.innerHTML = '<div class="w-8 h-8 bg-accent-pro rounded-lg flex items-center justify-center font-bold text-white shadow-sm">S</div>';
             }} />

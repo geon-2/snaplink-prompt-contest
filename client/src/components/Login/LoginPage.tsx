@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { signup, generateUuid } from '../../services/auth';
+import logo from '../../assets/logo.svg';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -20,32 +21,34 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uuid || !apiKey) {
-      setError('UUID와 API Key를 모두 입력하거나 자동 생성해주세요.');
+      setError('UUID와 API Key를 모두 입력해주세요.');
       return;
     }
 
     setIsLoading(true);
+    setError(null);
     try {
       await signup(uuid, apiKey);
       onLoginSuccess();
-    } catch (err) {
-      setError('인증 정보 저장 중 오류가 발생했습니다.');
+    } catch (err: any) {
+      setError(err.message || '로그인 중 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="h-screen w-screen bg-aurora flex items-center justify-center p-6 select-none font-sans">
-      {/* Decorative Aura Shapes */}
-      <div className="absolute top-[10%] left-[15%] w-64 h-64 bg-accent-pro/10 rounded-full blur-[100px] float-animation" />
-      <div className="absolute bottom-[10%] right-[15%] w-80 h-80 bg-accent-flash/5 rounded-full blur-[120px] float-animation" style={{ animationDelay: '-3s' }} />
+    <div className="min-h-screen bg-aurora flex items-center justify-center p-4 relative overflow-hidden font-sans">
+      {/* Background decoration */}
+      <div className="absolute top-[-10%] left-[-5%] w-[40%] h-[40%] bg-accent-pro opacity-10 blur-[120px] rounded-full animate-pulse" />
+      <div className="absolute bottom-[-10%] right-[-5%] w-[40%] h-[40%] bg-accent-pro opacity-10 blur-[120px] rounded-full animate-pulse-slow" />
 
-      <div className="glass-card glass-card-accent w-full max-w-[440px] rounded-[32px] p-10 z-10 animate-[scaleIn_0.5s_ease-out]">
+      {/* Login Card */}
+      <div className="w-[440px] glass-card p-10 flex flex-col items-center animate-fadeIn relative z-10 border border-white shadow-2xl">
         {/* Logo Section */}
         <div className="flex flex-col items-center mb-10 text-center">
           <div className="w-20 h-20 mb-6 flex items-center justify-center -translate-y-2">
-             <img src="/logo.png" alt="Snaplink Logo" className="w-full h-full object-contain" onError={(e) => {
+             <img src={logo} alt="Snaplink Logo" className="w-full h-full object-contain" onError={(e) => {
                // 로고 이미지가 없을 경우 폴백 표시
                (e.target as any).style.display = 'none';
                (e.target as any).parentElement.innerHTML = '<div class="w-16 h-16 bg-accent-pro rounded-2xl flex items-center justify-center shadow-lg"><span class="text-3xl text-white font-bold">S</span></div>';

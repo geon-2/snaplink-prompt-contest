@@ -51,8 +51,8 @@ body {
 
 /* ===== Scrollbar ===== */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -60,18 +60,18 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius-full);
+  background: var(--color-border-default);
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--color-text-tertiary);
 }
 
 /* ===== Selection ===== */
 ::selection {
-  background: var(--accent-pro);
-  color: white;
+  background: rgba(0, 169, 128, 0.15);
+  color: var(--color-text-primary);
 }
 
 /* ===== Animations ===== */
