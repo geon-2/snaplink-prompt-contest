@@ -111,7 +111,7 @@ export default function InputBar({
         </div>
       )}
 
-      <div className={`flex items-center gap-4 bg-slate-50 border rounded-2xl p-2.5 pl-5 transition-all outline-none ${showError ? 'border-red-400 animate-shake ring-4 ring-red-400/10' : 'border-slate-200 focus-within:border-accent-pro/40 focus-within:ring-4 focus-within:ring-accent-pro/5 focus-within:bg-white'}`}>
+      <div className={`flex items-center gap-4 bg-slate-50 border rounded-2xl p-2.5 pl-5 transition-all outline-none w-full ${showError ? 'border-red-400 animate-shake ring-4 ring-red-400/10' : 'border-slate-200 focus-within:border-accent-pro/40 focus-within:ring-4 focus-within:ring-accent-pro/5 focus-within:bg-white'}`}>
         {/* 파일 첨부 버튼 */}
         <button
           className="flex items-center justify-center w-9 h-9 min-w-9 rounded-lg text-slate-400 hover:text-accent-pro hover:bg-accent-pro/10 transition-all shrink-0"
@@ -137,7 +137,7 @@ export default function InputBar({
 
         <textarea
           ref={textareaRef}
-          className="flex-1 bg-transparent border-none outline-none text-text-primary font-bold text-[14px] leading-relaxed resize-none min-h-[44px] max-h-[140px] py-3 px-0 placeholder:text-slate-400 flex items-center"
+          className="flex-1 min-w-0 bg-transparent border-none outline-none text-text-primary font-bold text-[14px] leading-relaxed resize-none min-h-[44px] max-h-[140px] py-3 px-0 placeholder:text-slate-400 flex items-center"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}

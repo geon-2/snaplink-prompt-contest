@@ -23,19 +23,6 @@ export default function ChatPanel({ variant, messages, isLoading, onSend, onStop
     setInputValue('');
   };
 
-  const handleEdit = (msgId: string, content: string) => {
-    if (onEdit) {
-      onEdit(msgId);
-    }
-    setInputValue(content);
-  };
-
-  const handleRetry = (msgId: string, content: string) => {
-    if (onRetry) {
-      onRetry(msgId, content);
-    }
-  };
-
   const handleCopy = (content: string) => {
     navigator.clipboard.writeText(content).then(() => {
       // Optional: show a toast or feedback
@@ -85,8 +72,6 @@ export default function ChatPanel({ variant, messages, isLoading, onSend, onStop
               key={msg.id}
               message={msg}
               variant={variant}
-              onRetry={(content: string) => handleRetry(msg.id, content)}
-              onEdit={(content: string) => handleEdit(msg.id, content)}
               onCopy={(content: string) => handleCopy(content)}
             />
           ))
