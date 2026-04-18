@@ -1,0 +1,2 @@
+"""Snaplink API application package."""
+
