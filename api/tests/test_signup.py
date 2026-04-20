@@ -169,6 +169,107 @@ def test_image_completion_uploads_to_storage_and_returns_s3_keys(
     assert any("fileData" in part for part in parts)
 
 
+def test_generated_images_api_returns_paginated_user_gallery(
+    client,
+    session_factory: sessionmaker[Session],
+    fake_gemini_service,
+) -> None:
+    first_user_uuid = uuid4()
+    second_user_uuid = uuid4()
+
+    first_signup = client.post("/signup", json={"uuid": str(first_user_uuid), "api_key": "first-api-key"})
+    second_signup = client.post("/signup", json={"uuid": str(second_user_uuid), "api_key": "second-api-key"})
+    assert first_signup.status_code == 201
+    assert second_signup.status_code == 201
+
+    first_user_cookies = {
+        "user_uuid": str(first_user_uuid),
+        "user_api_key": "first-api-key",
+    }
+    second_user_cookies = {
+        "user_uuid": str(second_user_uuid),
+        "user_api_key": "second-api-key",
+    }
+
+    for prompt in ("first image", "second image", "third image"):
+        fake_gemini_service.next_events = [
+            GeminiImageEvent(data=prompt.encode("utf-8"), mime_type="image/png"),
+            GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
+        ]
+        response = client.post(
+            "/chat/completion",
+            data={"uuid": str(first_user_uuid), "type": "image", "text": prompt, "image_size": "1k"},
+            cookies=first_user_cookies,
+        )
+        assert response.status_code == 200
+
+    fake_gemini_service.next_events = [
+        GeminiImageEvent(data=b"other-user-image", mime_type="image/png"),
+        GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
+    ]
+    other_response = client.post(
+        "/chat/completion",
+        data={"uuid": str(second_user_uuid), "type": "image", "text": "other image", "image_size": "1k"},
+        cookies=second_user_cookies,
+    )
+    assert other_response.status_code == 200
+
+    with session_factory() as session:
+        saved_messages = session.scalars(
+            select(Message).where(
+                Message.user_uuid == first_user_uuid,
+                Message.role == "assistant",
+                Message.type == "image",
+            )
+        ).all()
+
+    expected_keys = {message.image_s3_key for message in saved_messages}
+    assert len(expected_keys) == 3
+
+    first_page = client.get(
+        "/images/generated",
+        params={"uuid": str(first_user_uuid), "page": 1, "page_size": 2},
+        cookies=first_user_cookies,
+    )
+    assert first_page.status_code == 200
+    first_page_payload = first_page.json()
+    assert first_page_payload["page"] == 1
+    assert first_page_payload["page_size"] == 2
+    assert first_page_payload["total"] == 3
+    assert first_page_payload["has_next"] is True
+    assert len(first_page_payload["items"]) == 2
+
+    second_page = client.get(
+        "/images/generated",
+        params={"uuid": str(first_user_uuid), "page": 2, "page_size": 2},
+        cookies=first_user_cookies,
+    )
+    assert second_page.status_code == 200
+    second_page_payload = second_page.json()
+    assert second_page_payload["page"] == 2
+    assert second_page_payload["page_size"] == 2
+    assert second_page_payload["total"] == 3
+    assert second_page_payload["has_next"] is False
+    assert len(second_page_payload["items"]) == 1
+
+    returned_keys = {
+        item["image_s3_key"]
+        for item in first_page_payload["items"] + second_page_payload["items"]
+    }
+    assert returned_keys == expected_keys
+
+    other_user_page = client.get(
+        "/images/generated",
+        params={"uuid": str(second_user_uuid), "page": 1, "page_size": 10},
+        cookies=second_user_cookies,
+    )
+    assert other_user_page.status_code == 200
+    other_user_payload = other_user_page.json()
+    assert other_user_payload["total"] == 1
+    assert len(other_user_payload["items"]) == 1
+    assert other_user_payload["items"][0]["image_s3_key"] not in expected_keys
+
+
 def test_chat_completion_continues_even_when_usage_exceeds_limit(
     client,
     fake_gemini_service,

@@ -75,3 +75,18 @@ class ChatDetailResponse(BaseModel):
     last_message_type: MessageType | None
     last_message_at: datetime | None
     messages: list[ChatMessageResponse]
+
+
+class GeneratedImageResponse(BaseModel):
+    message_id: UUID
+    chat_id: UUID
+    image_s3_key: str
+    created_at: datetime
+
+
+class GeneratedImagePageResponse(BaseModel):
+    items: list[GeneratedImageResponse]
+    page: int
+    page_size: int
+    total: int
+    has_next: bool

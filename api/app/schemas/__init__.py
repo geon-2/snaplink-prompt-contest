@@ -5,6 +5,8 @@ from app.schemas.chat import (
     ChatImageSize,
     ChatMessageResponse,
     ChatSummaryResponse,
+    GeneratedImagePageResponse,
+    GeneratedImageResponse,
     MessageRole,
     MessageType,
 )
@@ -18,6 +20,8 @@ __all__ = [
     "ChatImageSize",
     "ChatMessageResponse",
     "ChatSummaryResponse",
+    "GeneratedImagePageResponse",
+    "GeneratedImageResponse",
     "MessageRole",
     "MessageType",
     "SignupRequest",

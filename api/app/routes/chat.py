@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import authenticate_user_request
@@ -30,6 +30,8 @@ from app.schemas.chat import (
     ChatImageSize,
     ChatMessageResponse,
     ChatSummaryResponse,
+    GeneratedImagePageResponse,
+    GeneratedImageResponse,
     MessageRole,
     MessageType,
 )
@@ -305,6 +307,49 @@ def get_chat_detail(
             )
             for message in messages
         ],
+    )
+
+
+@router.get("/images/generated", response_model=GeneratedImagePageResponse)
+def list_generated_images(
+    request: Request,
+    uuid: UUID = Query(...),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db_session: Session = Depends(get_db_session),
+) -> GeneratedImagePageResponse:
+    authenticate_user_request(request=request, requested_uuid=uuid, db_session=db_session)
+
+    filters = (
+        Message.user_uuid == uuid,
+        Message.role == MessageRole.ASSISTANT.value,
+        Message.type == MessageType.IMAGE.value,
+        Message.image_s3_key.is_not(None),
+    )
+    total = db_session.scalar(select(func.count()).select_from(Message).where(*filters)) or 0
+    offset = (page - 1) * page_size
+    messages = db_session.scalars(
+        select(Message)
+        .where(*filters)
+        .order_by(Message.created_at.desc(), Message.message_id.desc())
+        .offset(offset)
+        .limit(page_size)
+    ).all()
+
+    return GeneratedImagePageResponse(
+        items=[
+            GeneratedImageResponse(
+                message_id=message.message_id,
+                chat_id=message.chat_id,
+                image_s3_key=message.image_s3_key or "",
+                created_at=message.created_at,
+            )
+            for message in messages
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
+        has_next=offset + len(messages) < total,
     )
 
 

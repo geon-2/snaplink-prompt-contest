@@ -46,6 +46,12 @@ Responses use `text/event-stream` with `meta`, `text_delta`, `image`, `done`, an
 
 All user-uploaded images and AI-generated images are stored in AWS S3, and the API returns `s3_key` values instead of direct URLs.
 
+`GET /images/generated` returns the authenticated user's generated image gallery with pagination.
+
+- `uuid`: user UUID
+- `page`: 1-based page number, default `1`
+- `page_size`: items per page, default `20`, max `100`
+
 ## Usage API
 
 `GET /usage/me` reads `user_api_key` from the cookie-backed session and returns the current spent amount, remaining budget, and configured limit for that key.
