@@ -50,3 +50,26 @@ def authenticate_user_request(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid session")
 
     return user
+
+
+def authenticate_session_from_cookies(
+    *,
+    request: Request,
+    db_session: Session,
+) -> User:
+    uuid_cookie = request.cookies.get(USER_UUID_COOKIE_NAME)
+    api_key_cookie = request.cookies.get(USER_API_KEY_COOKIE_NAME)
+
+    if not uuid_cookie or not api_key_cookie:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid session")
+
+    try:
+        requested_uuid = UUID(uuid_cookie)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid session") from exc
+
+    user = db_session.scalar(select(User).where(User.uuid == requested_uuid))
+    if user is None or not compare_digest(user.api_key, api_key_cookie):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid session")
+
+    return user

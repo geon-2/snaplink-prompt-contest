@@ -13,6 +13,13 @@ class ChatCompletionType(str, Enum):
     IMAGE = "image"
 
 
+class ChatImageSize(str, Enum):
+    SIZE_05K = "0.5k"
+    SIZE_1K = "1k"
+    SIZE_2K = "2k"
+    SIZE_4K = "4k"
+
+
 class MessageRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"
@@ -28,6 +35,7 @@ class ChatCompletionForm(BaseModel):
     chat_id: UUID | None = None
     type: ChatCompletionType
     text: str | None = None
+    image_size: ChatImageSize = ChatImageSize.SIZE_1K
 
     @classmethod
     def as_form(
@@ -36,8 +44,9 @@ class ChatCompletionForm(BaseModel):
         chat_id: UUID | None = Form(default=None),
         type: ChatCompletionType = Form(...),
         text: str | None = Form(default=None),
+        image_size: ChatImageSize = Form(default=ChatImageSize.SIZE_1K),
     ) -> "ChatCompletionForm":
-        return cls(uuid=uuid, chat_id=chat_id, type=type, text=text)
+        return cls(uuid=uuid, chat_id=chat_id, type=type, text=text, image_size=image_size)
 
 
 class ChatSummaryResponse(BaseModel):

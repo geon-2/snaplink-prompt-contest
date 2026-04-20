@@ -14,12 +14,13 @@ class Settings(BaseSettings):
     cookie_max_age: int = 604800
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     gemini_base_url: str = "https://generativelanguage.googleapis.com"
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.1-pro-preview"
     gemini_image_model: str = "gemini-3.1-flash-image-preview"
     aws_region: str = "ap-northeast-2"
     s3_bucket: str = "snaplink"
     s3_prefix: str = "snaplink"
     temp_upload_dir: Path = Path(".tmp/uploads")
+    usage_limit_usd: float = 10.0
 
     model_config = SettingsConfigDict(
         env_file=".env",

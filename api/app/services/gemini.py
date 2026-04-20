@@ -29,7 +29,19 @@ class GeminiImageEvent:
     mime_type: str
 
 
-GeminiStreamEvent = GeminiTextEvent | GeminiImageEvent
+@dataclass(slots=True)
+class GeminiUsageMetadata:
+    prompt_token_count: int = 0
+    candidates_token_count: int = 0
+    total_token_count: int = 0
+
+
+@dataclass(slots=True)
+class GeminiUsageEvent:
+    metadata: GeminiUsageMetadata
+
+
+GeminiStreamEvent = GeminiTextEvent | GeminiImageEvent | GeminiUsageEvent
 
 
 class GeminiService:
@@ -127,6 +139,16 @@ class GeminiService:
 
     @staticmethod
     def _parse_stream_chunk(chunk: dict[str, object]) -> Iterator[GeminiStreamEvent]:
+        usage_metadata = chunk.get("usageMetadata")
+        if isinstance(usage_metadata, dict):
+            yield GeminiUsageEvent(
+                metadata=GeminiUsageMetadata(
+                    prompt_token_count=_int_value(usage_metadata.get("promptTokenCount")),
+                    candidates_token_count=_int_value(usage_metadata.get("candidatesTokenCount")),
+                    total_token_count=_int_value(usage_metadata.get("totalTokenCount")),
+                )
+            )
+
         candidates = chunk.get("candidates", [])
         if not isinstance(candidates, list):
             return
@@ -173,3 +195,11 @@ def get_gemini_service() -> GeminiService:
         model=settings.gemini_model,
         image_model=settings.gemini_image_model,
     )
+
+
+def _int_value(value: object) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return 0

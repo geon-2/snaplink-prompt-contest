@@ -7,6 +7,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -21,17 +22,33 @@ from app.db.session import get_db_session
 from app.models.chat import Chat
 from app.models.history import History
 from app.models.message import Message
+from app.models.usage_ledger import UsageLedger
 from app.schemas.chat import (
     ChatCompletionForm,
     ChatCompletionType,
     ChatDetailResponse,
+    ChatImageSize,
     ChatMessageResponse,
     ChatSummaryResponse,
     MessageRole,
     MessageType,
 )
-from app.services.gemini import GeminiImageEvent, GeminiService, GeminiTextEvent, get_gemini_service
+from app.services.gemini import (
+    GeminiImageEvent,
+    GeminiService,
+    GeminiTextEvent,
+    GeminiUsageEvent,
+    GeminiUsageMetadata,
+    get_gemini_service,
+)
 from app.services.storage import S3StorageService, get_storage_service
+from app.services.usage import (
+    UsageCostBreakdown,
+    build_usage_snapshot,
+    calculate_usage_cost,
+    get_ledger_usage_total,
+    hash_api_key,
+)
 
 
 router = APIRouter(tags=["chat"])
@@ -71,7 +88,9 @@ def chat_completion(
         requested_uuid=payload.uuid,
         db_session=db_session,
     )
+    api_key_hash = hash_api_key(user.api_key)
     chat = _get_or_create_chat(db_session=db_session, user_uuid=payload.uuid, chat_id=payload.chat_id)
+    request_id = uuid4()
 
     user_message = _create_user_message(
         db_session=db_session,
@@ -114,6 +133,7 @@ def chat_completion(
 
         assistant_text_chunks: list[str] = []
         assistant_images: list[GeneratedAssistantImage] = []
+        usage_metadata = GeminiUsageMetadata()
 
         try:
             for event in gemini_service.stream_generate_content(
@@ -121,6 +141,9 @@ def chat_completion(
                 model=model_name,
                 payload=response_payload,
             ):
+                if isinstance(event, GeminiUsageEvent):
+                    usage_metadata = event.metadata
+                    continue
                 if isinstance(event, GeminiTextEvent):
                     assistant_text_chunks.append(event.text)
                     yield _sse_event("text_delta", {"text": event.text})
@@ -152,9 +175,65 @@ def chat_completion(
                 text_content="".join(assistant_text_chunks).strip() or None,
                 generated_images=assistant_images,
             )
-            yield _sse_event("done", {"chat_id": str(chat.chat_id)})
+            cost_breakdown = calculate_usage_cost(
+                request_type=payload.type.value,
+                prompt_tokens=usage_metadata.prompt_token_count,
+                candidate_tokens=usage_metadata.candidates_token_count,
+                generated_image_count=len(assistant_images),
+                image_size=payload.image_size.value,
+            )
+            _create_usage_ledger(
+                db_session=db_session,
+                request_id=request_id,
+                chat_id=chat.chat_id,
+                user_uuid=payload.uuid,
+                api_key_hash=api_key_hash,
+                model=model_name,
+                request_type=payload.type.value,
+                status="success",
+                image_size=payload.image_size if payload.type is ChatCompletionType.IMAGE else None,
+                cost_breakdown=cost_breakdown,
+            )
+            db_session.flush()
+            usage_snapshot = build_usage_snapshot(
+                used_usd=get_ledger_usage_total(db_session=db_session, api_key_hash=api_key_hash),
+                usage_limit_usd=Decimal(str(settings.usage_limit_usd)),
+            )
+            db_session.commit()
+            yield _sse_event(
+                "done",
+                {
+                    "chat_id": str(chat.chat_id),
+                    "cost_usd": str(cost_breakdown.total_cost_usd),
+                    "used_usd": str(usage_snapshot.used_usd),
+                    "remaining_usd": str(usage_snapshot.remaining_usd),
+                    "limit_usd": str(usage_snapshot.limit_usd),
+                    "quota_exceeded": usage_snapshot.quota_exceeded,
+                },
+            )
         except Exception as exc:
             db_session.rollback()
+            _create_usage_ledger(
+                db_session=db_session,
+                request_id=request_id,
+                chat_id=chat.chat_id,
+                user_uuid=payload.uuid,
+                api_key_hash=api_key_hash,
+                model=model_name,
+                request_type=payload.type.value,
+                status="failed",
+                image_size=payload.image_size if payload.type is ChatCompletionType.IMAGE else None,
+                cost_breakdown=UsageCostBreakdown(
+                    prompt_tokens=usage_metadata.prompt_token_count,
+                    candidate_tokens=usage_metadata.candidates_token_count,
+                    generated_image_count=len(assistant_images),
+                    input_cost_usd=_zero_cost(),
+                    output_cost_usd=_zero_cost(),
+                    image_cost_usd=_zero_cost(),
+                    total_cost_usd=_zero_cost(),
+                ),
+            )
+            db_session.commit()
             yield _sse_event("error", {"detail": str(exc)})
 
     return StreamingResponse(
@@ -486,7 +565,40 @@ def _create_assistant_messages(
         chat.last_message_at = last_event_time
         chat.updated_at = last_event_time
         db_session.add(chat)
-        db_session.commit()
+
+
+def _create_usage_ledger(
+    *,
+    db_session: Session,
+    request_id: UUID,
+    chat_id: UUID,
+    user_uuid: UUID,
+    api_key_hash: str,
+    model: str,
+    request_type: str,
+    status: str,
+    image_size: ChatImageSize | None,
+    cost_breakdown: UsageCostBreakdown,
+) -> None:
+    db_session.add(
+        UsageLedger(
+            request_id=request_id,
+            chat_id=chat_id,
+            user_uuid=user_uuid,
+            api_key_hash=api_key_hash,
+            model=model,
+            request_type=request_type,
+            status=status,
+            image_size=image_size.value if image_size else None,
+            prompt_tokens=cost_breakdown.prompt_tokens,
+            candidate_tokens=cost_breakdown.candidate_tokens,
+            generated_image_count=cost_breakdown.generated_image_count,
+            input_cost_usd=cost_breakdown.input_cost_usd,
+            output_cost_usd=cost_breakdown.output_cost_usd,
+            image_cost_usd=cost_breakdown.image_cost_usd,
+            total_cost_usd=cost_breakdown.total_cost_usd,
+        )
+    )
 
 
 def _gemini_role(role: str | None) -> str:
@@ -598,3 +710,9 @@ def _remove_temp_file(temp_path: Path) -> None:
 def _extension_from_mime_type(mime_type: str) -> str:
     guessed_extension = mimetypes.guess_extension(mime_type)
     return guessed_extension or ".bin"
+
+
+def _zero_cost():
+    from decimal import Decimal
+
+    return Decimal("0")

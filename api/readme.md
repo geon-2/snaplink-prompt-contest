@@ -9,7 +9,7 @@ py -m pip install -e .[dev]
 Copy-Item .env.example .env
 ```
 
-Update `.env` with real values for `DATABASE_URL`, `S3_BUCKET`, and the Gemini model settings.
+Update `.env` with real values for `DATABASE_URL`, `S3_BUCKET`, Gemini model settings, and `USAGE_LIMIT_USD`.
 
 ## Run
 
@@ -45,3 +45,9 @@ Success returns `201 Created` and sets `user_uuid` and `user_api_key` cookies. B
 Responses use `text/event-stream` with `meta`, `text_delta`, `image`, `done`, and `error` events.
 
 All user-uploaded images and AI-generated images are stored in AWS S3, and the API returns `s3_key` values instead of direct URLs.
+
+## Usage API
+
+`GET /usage/me` reads `user_api_key` from the cookie-backed session and returns the current spent amount, remaining budget, and configured limit for that key.
+
+Usage is tracked in the database per request through `usage_ledger`. The API does not automatically block requests when the configured limit is exceeded; it only reports the current usage state.

@@ -21,11 +21,19 @@ os.environ.setdefault("AWS_REGION", "ap-northeast-2")
 os.environ.setdefault("S3_BUCKET", "test-bucket")
 os.environ.setdefault("S3_PREFIX", "tests")
 os.environ.setdefault("TEMP_UPLOAD_DIR", ".tmp/tests")
+os.environ.setdefault("USAGE_LIMIT_USD", "10")
 
 from app.db.base import Base
 from app.db.session import get_db_session
 from app.main import app
-from app.services.gemini import GeminiImageEvent, GeminiTextEvent, GeminiUploadedFile, get_gemini_service
+from app.services.gemini import (
+    GeminiImageEvent,
+    GeminiTextEvent,
+    GeminiUploadedFile,
+    GeminiUsageEvent,
+    GeminiUsageMetadata,
+    get_gemini_service,
+)
 from app.services.storage import get_storage_service
 
 
@@ -50,7 +58,10 @@ class FakeGeminiService:
         self.model = "gemini-test-chat"
         self.image_model = "gemini-test-image"
         self.last_payload: dict[str, object] | None = None
-        self.next_events: list[GeminiTextEvent | GeminiImageEvent] = [GeminiTextEvent(text="hello from gemini")]
+        self.next_events: list[GeminiTextEvent | GeminiImageEvent | GeminiUsageEvent] = [
+            GeminiTextEvent(text="hello from gemini"),
+            GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
+        ]
 
     def upload_file(
         self,
@@ -68,7 +79,7 @@ class FakeGeminiService:
         api_key: str,
         model: str,
         payload: dict[str, object],
-    ) -> Iterator[GeminiTextEvent | GeminiImageEvent]:
+    ) -> Iterator[GeminiTextEvent | GeminiImageEvent | GeminiUsageEvent]:
         self.last_payload = payload
         yield from self.next_events
 
