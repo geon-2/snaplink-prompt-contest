@@ -5,7 +5,7 @@ import InputBar from '../InputBar/InputBar';
 /**
  * 채팅 패널 컴포넌트 (텍스트 또는 이미지)
  */
-export default function ChatPanel({ variant, messages, isLoading, onSend, onStop, onRetry, onEdit }: any) {
+export default function ChatPanel({ variant, messages, isLoading, onSend, onStop, onRetry, onEdit, canClose, onClose }: any) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState('');
 
@@ -42,11 +42,23 @@ export default function ChatPanel({ variant, messages, isLoading, onSend, onStop
             <span className="text-[11px] font-bold text-text-tertiary leading-tight mt-0.5">{modelDesc}</span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <div className="flex items-center gap-[6px] px-3 py-1.5 rounded-full text-[11px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wider">
             <span className="w-1.5 h-1.5 rounded-full bg-accent-pro animate-pulse" />
             Active
           </div>
+          {canClose && (
+            <button
+              onClick={onClose}
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-text-tertiary hover:text-text-primary hover:bg-slate-100 transition-all"
+              title="패널 닫기"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
