@@ -436,6 +436,7 @@ def _create_user_message(
         created_at=now,
     )
     db_session.add(message)
+    db_session.flush()
 
     sequence = 0
     if text_content:
@@ -549,17 +550,17 @@ def _create_assistant_messages(
     if text_content:
         created_at = _utcnow()
         message_id = uuid4()
-        db_session.add(
-            Message(
-                message_id=message_id,
-                chat_id=chat.chat_id,
-                user_uuid=user_uuid,
-                role=MessageRole.ASSISTANT.value,
-                type=MessageType.CHAT.value,
-                text_content=text_content,
-                created_at=created_at,
-            )
+        message = Message(
+            message_id=message_id,
+            chat_id=chat.chat_id,
+            user_uuid=user_uuid,
+            role=MessageRole.ASSISTANT.value,
+            type=MessageType.CHAT.value,
+            text_content=text_content,
+            created_at=created_at,
         )
+        db_session.add(message)
+        db_session.flush()
         db_session.add(
             History(
                 chat_id=chat.chat_id,
@@ -578,17 +579,17 @@ def _create_assistant_messages(
 
     for generated_image in generated_images:
         created_at = _utcnow()
-        db_session.add(
-            Message(
-                message_id=generated_image.message_id,
-                chat_id=chat.chat_id,
-                user_uuid=user_uuid,
-                role=MessageRole.ASSISTANT.value,
-                type=MessageType.IMAGE.value,
-                image_s3_key=generated_image.s3_key,
-                created_at=created_at,
-            )
+        message = Message(
+            message_id=generated_image.message_id,
+            chat_id=chat.chat_id,
+            user_uuid=user_uuid,
+            role=MessageRole.ASSISTANT.value,
+            type=MessageType.IMAGE.value,
+            image_s3_key=generated_image.s3_key,
+            created_at=created_at,
         )
+        db_session.add(message)
+        db_session.flush()
         db_session.add(
             History(
                 chat_id=chat.chat_id,
