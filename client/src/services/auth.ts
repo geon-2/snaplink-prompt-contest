@@ -1,23 +1,34 @@
 /**
  * 인증 관리 서비스
- *
- * - POST /signup으로 쿠키 기반 인증 설정
- * - 쿠키에서 user_uuid 읽기
  */
-
-
 
 /**
- * 회원가입/인증 요청 (Mock)
+ * POST /api/signup — 신규 등록 또는 기존 사용자 재인증
  */
 export async function signup(uuid: string, apiKey: string): Promise<void> {
-  console.log('Mock Signup:', { uuid, apiKey });
-  // 가짜 쿠키 설정 (Mock 모드)
-  document.cookie = `user_uuid=${uuid}; path=/; max-age=3600`;
-  document.cookie = `user_api_key=${apiKey}; path=/; max-age=3600`;
-  
-  // 성공 시뮬레이션
-  await new Promise(resolve => setTimeout(resolve, 500));
+  const resp = await fetch('/api/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ uuid, api_key: apiKey }),
+  });
+
+  if (resp.ok) {
+    // 서버가 Set-Cookie로 쿠키를 설정하지만, 프록시 환경에서 안 될 경우 JS에서도 설정
+    document.cookie = `user_uuid=${uuid}; path=/; max-age=604800; samesite=lax`;
+    document.cookie = `user_api_key=${apiKey}; path=/; max-age=604800; samesite=lax`;
+    return;
+  }
+
+  if (resp.status === 409) {
+    // 이미 등록된 UUID — 쿠키만 설정
+    document.cookie = `user_uuid=${uuid}; path=/; max-age=604800; samesite=lax`;
+    document.cookie = `user_api_key=${apiKey}; path=/; max-age=604800; samesite=lax`;
+    return;
+  }
+
+  const body = await resp.json().catch(() => ({}));
+  throw new Error(body.detail || `서버 오류 (${resp.status})`);
 }
 
 /**
