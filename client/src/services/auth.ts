@@ -2,11 +2,13 @@
  * 인증 관리 서비스
  */
 
+const API_BASE = process.env.API_TARGET + "/api"
+
 /**
  * POST /api/signup — 신규 등록 또는 기존 사용자 재인증
  */
 export async function signup(uuid: string, apiKey: string): Promise<void> {
-  const resp = await fetch('/api/signup', {
+  const resp = await fetch(`${API_BASE}/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
