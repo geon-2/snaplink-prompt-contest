@@ -2,7 +2,7 @@
  * 인증 관리 서비스
  */
 
-const API_BASE = (process.env.API_BASE_URL || '').replace(/\/$/, '');
+const API_BASE = '/api';
 
 /**
  * POST /api/signup — 신규 등록 또는 기존 사용자 재인증

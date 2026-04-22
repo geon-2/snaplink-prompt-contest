@@ -6,7 +6,7 @@ import type {
   UsageInfo,
 } from '../types';
 
-const API_BASE = (process.env.API_BASE_URL || '').replace(/\/$/, '');
+const API_BASE = '/api';
 
 /**
  * POST /api/chat/completion — SSE 스트리밍
