@@ -4,7 +4,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.1-pro-preview"
     gemini_image_model: str = "gemini-3.1-flash-image-preview"
     aws_region: str = "ap-northeast-2"
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
     s3_bucket: str = "snaplink"
     s3_prefix: str = "snaplink"
     temp_upload_dir: Path = Path(".tmp/uploads")
@@ -44,6 +46,16 @@ class Settings(BaseSettings):
                 return parsed
             return [item.strip() for item in raw_value.split(",") if item.strip()]
         return value
+
+    @model_validator(mode="after")
+    def validate_aws_credentials(self) -> "Settings":
+        has_access_key = bool(self.aws_access_key_id)
+        has_secret_key = bool(self.aws_secret_access_key)
+        if has_access_key != has_secret_key:
+            raise ValueError(
+                "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set together."
+            )
+        return self
 
 
 @lru_cache

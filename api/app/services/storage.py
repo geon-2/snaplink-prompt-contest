@@ -9,10 +9,21 @@ from app.core.config import get_settings
 
 
 class S3StorageService:
-    def __init__(self, *, bucket: str, region: str) -> None:
+    def __init__(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        aws_access_key_id: str | None = None,
+        aws_secret_access_key: str | None = None,
+    ) -> None:
         self.bucket = bucket
         self.region = region
-        self._client = boto3.client("s3", region_name=region)
+        client_kwargs: dict[str, str] = {"region_name": region}
+        if aws_access_key_id and aws_secret_access_key:
+            client_kwargs["aws_access_key_id"] = aws_access_key_id
+            client_kwargs["aws_secret_access_key"] = aws_secret_access_key
+        self._client = boto3.client("s3", **client_kwargs)
 
     def upload_file(self, file_path: Path, key: str, content_type: str) -> str:
         self._client.upload_file(
@@ -44,4 +55,9 @@ class S3StorageService:
 @lru_cache
 def get_storage_service() -> S3StorageService:
     settings = get_settings()
-    return S3StorageService(bucket=settings.s3_bucket, region=settings.aws_region)
+    return S3StorageService(
+        bucket=settings.s3_bucket,
+        region=settings.aws_region,
+        aws_access_key_id=settings.aws_access_key_id,
+        aws_secret_access_key=settings.aws_secret_access_key,
+    )

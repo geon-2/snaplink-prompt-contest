@@ -11,6 +11,27 @@ Copy-Item .env.example .env
 
 Update `.env` with real values for `DATABASE_URL`, `S3_BUCKET`, Gemini model settings, and `USAGE_LIMIT_USD`.
 
+For S3 credentials, either:
+
+- set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `.env`, or
+- rely on the AWS SDK default credential chain such as `~/.aws/credentials`, ECS task roles, or EC2 instance roles.
+
+## PostgreSQL
+
+The API already uses PostgreSQL as the default database.
+
+Run a local database with Docker:
+
+```powershell
+docker compose up -d postgres
+```
+
+Default connection:
+
+```text
+postgresql+psycopg://postgres:postgres@localhost:5432/snaplink
+```
+
 ## Run
 
 ```powershell
