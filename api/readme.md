@@ -67,6 +67,8 @@ Responses use `text/event-stream` with `meta`, `text_delta`, `image`, `done`, an
 
 All user-uploaded images and AI-generated images are stored in AWS S3, and the API returns `s3_key` values instead of direct URLs.
 
+By default, images are stored in bucket `revede` under keys shaped like `prompt/<api-key>/chats/...`.
+
 `GET /images/generated` returns the authenticated user's generated image gallery with pagination.
 
 - `uuid`: user UUID

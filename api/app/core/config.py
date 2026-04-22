@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     aws_region: str = "ap-northeast-2"
     aws_access_key_id: str | None = None
     aws_secret_access_key: str | None = None
-    s3_bucket: str = "snaplink"
-    s3_prefix: str = "snaplink"
+    s3_bucket: str = "revede"
+    s3_prefix: str = "prompt"
     temp_upload_dir: Path = Path(".tmp/uploads")
     usage_limit_usd: float = 10.0
 

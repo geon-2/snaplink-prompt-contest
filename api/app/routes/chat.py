@@ -99,6 +99,7 @@ def chat_completion(
         storage_service=storage_service,
         settings=settings,
         uploads=uploads,
+        user_api_key=user.api_key,
         user_uuid=payload.uuid,
         chat=chat,
         message_type=payload.type.value,
@@ -154,7 +155,7 @@ def chat_completion(
                 image_message_id = uuid4()
                 image_key = _build_output_s3_key(
                     settings=settings,
-                    user_uuid=payload.uuid,
+                    user_api_key=user.api_key,
                     chat_id=chat.chat_id,
                     message_id=image_message_id,
                     index=len(assistant_images),
@@ -397,6 +398,7 @@ def _create_user_message(
     storage_service: S3StorageService,
     settings: Settings,
     uploads: list[UploadFile],
+    user_api_key: str,
     user_uuid: UUID,
     chat: Chat,
     message_type: str,
@@ -411,7 +413,7 @@ def _create_user_message(
         mime_type = upload.content_type or "application/octet-stream"
         key = _build_input_s3_key(
             settings=settings,
-            user_uuid=user_uuid,
+            user_api_key=user_api_key,
             chat_id=chat.chat_id,
             message_id=message_id,
             index=index,
@@ -681,6 +683,11 @@ def _safe_filename(filename: str | None, fallback: str) -> str:
     return sanitized or fallback
 
 
+def _safe_s3_segment(value: str | None, fallback: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", value or "")
+    return sanitized or fallback
+
+
 def _join_s3_key(*parts: str) -> str:
     return "/".join(part.strip("/") for part in parts if part and part.strip("/"))
 
@@ -688,20 +695,20 @@ def _join_s3_key(*parts: str) -> str:
 def _build_input_s3_key(
     *,
     settings: Settings,
-    user_uuid: UUID,
+    user_api_key: str,
     chat_id: UUID,
     message_id: UUID,
     index: int,
     filename: str | None,
 ) -> str:
     safe_name = _safe_filename(filename, f"upload-{index}")
+    safe_api_key = _safe_s3_segment(user_api_key, "anonymous")
     return _join_s3_key(
         settings.s3_prefix,
-        "users",
-        str(user_uuid),
+        safe_api_key,
         "chats",
         str(chat_id),
-        "inputs",
+        "input",
         str(message_id),
         safe_name,
     )
@@ -710,20 +717,20 @@ def _build_input_s3_key(
 def _build_output_s3_key(
     *,
     settings: Settings,
-    user_uuid: UUID,
+    user_api_key: str,
     chat_id: UUID,
     message_id: UUID,
     index: int,
     mime_type: str,
 ) -> str:
     extension = _extension_from_mime_type(mime_type)
+    safe_api_key = _safe_s3_segment(user_api_key, "anonymous")
     return _join_s3_key(
         settings.s3_prefix,
-        "users",
-        str(user_uuid),
+        safe_api_key,
         "chats",
         str(chat_id),
-        "outputs",
+        "output",
         str(message_id),
         f"{index}{extension}",
     )

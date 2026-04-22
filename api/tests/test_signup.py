@@ -162,8 +162,8 @@ def test_image_completion_uploads_to_storage_and_returns_s3_keys(
         assert list_payload[0]["last_message_type"] == "image"
 
     stored_keys = set(fake_storage_service.objects.keys())
-    assert any("/inputs/" in key for key in stored_keys)
-    assert any("/outputs/" in key for key in stored_keys)
+    assert any(key.startswith("tests/user-api-key/chats/") and "/input/" in key for key in stored_keys)
+    assert any(key.startswith("tests/user-api-key/chats/") and "/output/" in key for key in stored_keys)
     assert fake_gemini_service.last_payload is not None
     parts = fake_gemini_service.last_payload["contents"][0]["parts"]
     assert any("fileData" in part for part in parts)
@@ -225,6 +225,7 @@ def test_generated_images_api_returns_paginated_user_gallery(
 
     expected_keys = {message.image_s3_key for message in saved_messages}
     assert len(expected_keys) == 3
+    assert all(key is not None and key.startswith("tests/first-api-key/chats/") for key in expected_keys)
 
     first_page = client.get(
         "/images/generated",
@@ -268,6 +269,7 @@ def test_generated_images_api_returns_paginated_user_gallery(
     assert other_user_payload["total"] == 1
     assert len(other_user_payload["items"]) == 1
     assert other_user_payload["items"][0]["image_s3_key"] not in expected_keys
+    assert other_user_payload["items"][0]["image_s3_key"].startswith("tests/second-api-key/chats/")
 
 
 def test_chat_completion_continues_even_when_usage_exceeds_limit(
