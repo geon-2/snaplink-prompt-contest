@@ -54,9 +54,15 @@ export function isAuthenticated(): boolean {
   return getUserUuid() !== null && getUserApiKey() !== null;
 }
 
+const UUID_KEY = 'pa_user_uuid';
+
 /**
- * UUID v4 생성 (crypto API 사용)
+ * localStorage에서 UUID를 가져오거나, 없으면 생성 후 저장한다.
  */
-export function generateUuid(): string {
-  return crypto.randomUUID();
+export function getOrCreateLocalUuid(): string {
+  const existing = localStorage.getItem(UUID_KEY);
+  if (existing) return existing;
+  const newUuid = crypto.randomUUID();
+  localStorage.setItem(UUID_KEY, newUuid);
+  return newUuid;
 }
