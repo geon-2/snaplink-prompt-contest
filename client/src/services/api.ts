@@ -8,7 +8,7 @@ import type {
 
 // 로컬 개발: VITE_API_BASE_URL 미설정 → vite 프록시(/api) 사용
 // 프로덕션: Vercel 환경변수 VITE_API_BASE_URL (예: http://3.36.38.216:9000)
-const API_BASE = process.env.API_TARGET + "/api";
+const API_BASE = process.env.API_TARGET
 
 /**
  * POST /api/chat/completion — SSE 스트리밍
