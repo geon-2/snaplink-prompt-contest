@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.chat import Chat
@@ -117,6 +117,35 @@ def test_chat_completion_streams_text_and_persists_history(
         "exchange_rate_date": "2026-04-01",
         "quota_exceeded": False,
     }
+
+
+def test_usage_snapshot_is_calculated_from_raw_usage_buckets(
+    client,
+    session_factory: sessionmaker[Session],
+    fake_gemini_service,
+) -> None:
+    user_uuid = str(uuid4())
+    signup_response = client.post("/signup", json={"uuid": user_uuid, "api_key": "user-api-key"})
+    assert signup_response.status_code == 201
+
+    fake_gemini_service.next_events = [
+        GeminiTextEvent(text="hello"),
+        GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=1_000, candidates_token_count=2_000)),
+    ]
+
+    response = client.post(
+        "/chat/completion",
+        data={"uuid": user_uuid, "type": "chat", "text": "say hello"},
+    )
+    assert response.status_code == 200
+
+    with session_factory() as session:
+        session.execute(update(UsageLedger).values(total_cost_usd=Decimal("0")))
+        session.commit()
+
+    usage_response = client.get("/usage/me")
+    assert usage_response.status_code == 200
+    assert usage_response.json()["used_usd"] == "0.026000"
 
 
 def test_image_completion_uploads_to_storage_and_returns_s3_keys(
