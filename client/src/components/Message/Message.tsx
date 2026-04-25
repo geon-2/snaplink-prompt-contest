@@ -87,16 +87,10 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
 
           {/* 이미지 생성 중 (AI) */}
           {!isUser && isGenerating && (
-            <div className="flex flex-col items-center justify-center gap-4 py-12 px-8 min-h-[240px] bg-slate-50 rounded-2xl border border-dashed border-slate-300">
-              <div className="relative">
+            <div className="flex items-center justify-center py-10 px-8">
+              <div className="relative w-12 h-12">
                 <div className="w-12 h-12 border-4 border-accent-flash border-t-transparent rounded-full animate-spin" />
                 <div className="absolute inset-0 flex items-center justify-center text-lg">🎨</div>
-              </div>
-              <div className="text-[14px] font-black text-slate-500 text-center uppercase tracking-wide">
-                Image Generation in Progress...
-              </div>
-              <div className="w-[160px] h-[4px] bg-slate-200 rounded-full overflow-hidden mt-1 relative">
-                <div className="absolute top-0 left-0 h-full w-[40%] bg-accent-flash rounded-full animate-[shimmer_1.5s_infinite]" />
               </div>
             </div>
           )}

@@ -56,6 +56,11 @@ export function isAuthenticated(): boolean {
   return getUserUuid() !== null && getUserApiKey() !== null;
 }
 
+export function logout(): void {
+  document.cookie = 'user_uuid=; path=/; max-age=0; samesite=lax';
+  document.cookie = 'user_api_key=; path=/; max-age=0; samesite=lax';
+}
+
 const UUID_KEY = 'pa_user_uuid';
 
 /**

@@ -12,11 +12,11 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.auth import authenticate_user_request
+from app.core.auth import authenticate_session_from_cookies, authenticate_user_request
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
 from app.models.chat import Chat
@@ -352,6 +352,21 @@ def list_generated_images(
         total=total,
         has_next=offset + len(messages) < total,
     )
+
+
+@router.get("/images/{s3_key:path}")
+def get_image(
+    s3_key: str,
+    request: Request,
+    db_session: Session = Depends(get_db_session),
+    storage_service: S3StorageService = Depends(get_storage_service),
+) -> Response:
+    authenticate_session_from_cookies(request=request, db_session=db_session)
+    try:
+        data, content_type = storage_service.download_object(s3_key)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="image not found")
+    return Response(content=data, media_type=content_type or "image/png")
 
 
 def _normalize_text(value: str | None) -> str | None:

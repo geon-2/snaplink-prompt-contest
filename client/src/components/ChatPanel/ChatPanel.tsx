@@ -5,7 +5,7 @@ import InputBar from '../InputBar/InputBar';
 /**
  * 채팅 패널 컴포넌트 (텍스트 또는 이미지)
  */
-export default function ChatPanel({ variant, messages, isLoading, onSend, onStop, onRetry, onEdit, canClose, onClose }: any) {
+export default function ChatPanel({ variant, messages, isLoading, onSend, onStop, onRetry: _onRetry, onEdit: _onEdit, canClose, onClose }: any) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState('');
 
