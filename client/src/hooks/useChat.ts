@@ -14,7 +14,8 @@ function apiMessageToUiMessage(msg: ApiMessage): Message {
     timestamp: msg.created_at,
     type: msg.type,
     imageS3Key: msg.image_s3_key ?? undefined,
-    attachedImages: msg.attached_images, // 추가된 필드 매핑
+    imageUrl: msg.image_url ?? undefined,
+    attachedImages: msg.attached_images,
   };
 }
 

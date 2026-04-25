@@ -51,6 +51,13 @@ class S3StorageService:
         finally:
             body.close()
 
+    def generate_presigned_url(self, key: str, expires_in: int = 3600) -> str:
+        return self._client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": key},
+            ExpiresIn=expires_in,
+        )
+
 
 @lru_cache
 def get_storage_service() -> S3StorageService:

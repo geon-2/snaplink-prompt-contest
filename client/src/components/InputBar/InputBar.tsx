@@ -115,7 +115,12 @@ export default function InputBar({
         {/* 파일 첨부 버튼 */}
         <button
           className="flex items-center justify-center w-9 h-9 min-w-9 rounded-lg text-slate-400 hover:text-accent-pro hover:bg-accent-pro/10 transition-all shrink-0"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => {
+            if (fileInputRef.current) {
+              fileInputRef.current.value = '';
+              fileInputRef.current.click();
+            }
+          }}
           disabled={disabled}
           type="button"
           aria-label="이미지 첨부"

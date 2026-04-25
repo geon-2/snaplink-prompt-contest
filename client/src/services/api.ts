@@ -76,7 +76,7 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
                 onTextDelta({ delta: data.text });
                 break;
               case 'image':
-                onImage({ s3_key: data.s3_key });
+                onImage({ s3_key: data.s3_key, data: data.data, mime_type: data.mime_type });
                 break;
               case 'done':
                 onDone();
@@ -141,6 +141,7 @@ export async function fetchChatDetail(chatId: string, uuid: string): Promise<Cha
     type: m.type,
     text_content: m.text_content,
     image_s3_key: m.image_s3_key,
+    image_url: m.image_url ?? undefined,
     created_at: m.created_at,
   }));
 

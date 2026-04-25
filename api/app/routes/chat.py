@@ -283,6 +283,7 @@ def get_chat_detail(
     chat_id: UUID,
     uuid: UUID = Query(...),
     db_session: Session = Depends(get_db_session),
+    storage_service: S3StorageService = Depends(get_storage_service),
 ) -> ChatDetailResponse:
     authenticate_user_request(request=request, requested_uuid=uuid, db_session=db_session)
     chat = db_session.scalar(select(Chat).where(Chat.chat_id == chat_id, Chat.user_uuid == uuid))
@@ -309,6 +310,7 @@ def get_chat_detail(
                 type=MessageType(message.type),
                 text_content=message.text_content,
                 image_s3_key=message.image_s3_key,
+                image_url=storage_service.generate_presigned_url(message.image_s3_key) if message.image_s3_key else None,
                 created_at=message.created_at,
             )
             for message in messages

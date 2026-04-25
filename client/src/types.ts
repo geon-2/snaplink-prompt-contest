@@ -55,6 +55,7 @@ export interface ApiMessage {
   type: ChatType;
   text_content: string | null;
   image_s3_key: string | null;
+  image_url?: string;
   attached_images?: string[]; // 사용자가 첨부한 이미지 (Base64 등)
   created_at: string;
 }
