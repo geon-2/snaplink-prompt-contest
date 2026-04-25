@@ -15,8 +15,9 @@ export async function signup(uuid: string, apiKey: string): Promise<void> {
     body: JSON.stringify({ uuid, api_key: apiKey }),
   });
 
-  if (resp.ok) {
+  if (resp.ok || resp.status === 409) {
     // 서버가 Set-Cookie로 쿠키를 설정하지만, 프록시 환경에서 안 될 경우 JS에서도 설정
+    // 409: 서버가 UPSERT 미적용 상태일 때를 위한 클라이언트 fallback
     document.cookie = `user_uuid=${uuid}; path=/; max-age=604800; samesite=lax`;
     document.cookie = `user_api_key=${apiKey}; path=/; max-age=604800; samesite=lax`;
     return;

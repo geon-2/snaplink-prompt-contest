@@ -9,8 +9,9 @@ export function getImageUrl(s3Key: string): string {
     return s3Key;
   }
 
-  const bucket = import.meta.env.VITE_S3_BUCKET as string | undefined;
-  const region = import.meta.env.VITE_AWS_REGION as string | undefined;
+  // vite.config.js의 define으로 빌드 시 주입됨
+  const bucket = process.env.S3_BUCKET as string | undefined;
+  const region = process.env.AWS_REGION as string | undefined;
 
   if (bucket && region) {
     return `https://${bucket}.s3.${region}.amazonaws.com/${s3Key}`;
