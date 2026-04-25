@@ -31,6 +31,8 @@ function apiMessageToUiMessage(msg: ApiMessage): Message {
  * 채팅 기능을 관리하는 커스텀 훅
  *
  * 백엔드 POST /chat/completion SSE 스트리밍을 처리한다.
+ * 세션 전환 시 진행 중인 스트림을 중단하지 않고 백그라운드에서 완료시킨다.
+ * generationRef를 통해 이전 세션의 콜백이 현재 UI에 영향을 주지 않도록 제어한다.
  *
  * @param type - 패널 타입 ('chat' | 'image')
  */
@@ -39,6 +41,9 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // 세대 카운터: 세션 전환 시 증가하여 이전 스트림의 콜백이 UI를 변경하지 않도록 함
+  const generationRef = useRef(0);
 
   /**
    * 메시지 전송 — SSE 스트리밍 처리
@@ -53,13 +58,17 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
         return;
       }
 
-      // 이전 요청 취소
+      // 이전 요청 취소 (같은 세션 내에서 연속 전송 시)
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
+
+      // 현재 세대를 캡처 — 콜백에서 세대가 변경되었으면 무시
+      const thisGeneration = generationRef.current;
+      const isStale = () => generationRef.current !== thisGeneration;
 
       // 낙관적 UI: 사용자 메시지 즉시 추가 (ID는 서버 meta 이벤트로 업데이트)
       const tempUserMsgId = `temp-user-${Date.now()}`;
@@ -100,6 +109,8 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
           signal: controller.signal,
 
           onMeta: (data) => {
+            if (isStale()) return; // 세션 전환 후엔 무시
+
             // 서버에서 실제 chat_id, message_id 수신
             const isNewChat = !chatId;
             setChatId(data.chat_id);
@@ -124,6 +135,7 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
           },
 
           onTextDelta: (data) => {
+            if (isStale()) return;
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === resolvedAiMsgId || msg.id === tempAiMsgId
@@ -134,6 +146,7 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
           },
 
           onImage: (data) => {
+            if (isStale()) return;
             let imageUrl: string | undefined;
             if (data.data) {
               // base64 인라인 데이터가 있으면 data URL 사용
@@ -152,6 +165,7 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
           },
 
           onDone: () => {
+            if (isStale()) return;
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === resolvedAiMsgId || msg.id === tempAiMsgId
@@ -162,6 +176,7 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
           },
 
           onError: (data) => {
+            if (isStale()) return;
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === resolvedAiMsgId || msg.id === tempAiMsgId
@@ -179,6 +194,7 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
         });
       } catch (error: unknown) {
         if (error instanceof Error && error.name === 'AbortError') return;
+        if (isStale()) return;
 
         setMessages((prev) =>
           prev.map((msg) =>
@@ -194,7 +210,9 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
           )
         );
       } finally {
-        setIsLoading(false);
+        if (!isStale()) {
+          setIsLoading(false);
+        }
         abortControllerRef.current = null;
       }
     },
@@ -203,10 +221,18 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
 
   /**
    * 기존 채팅 로드 (세션 전환 시)
+   *
+   * 진행 중인 스트림을 중단하지 않는다.
+   * 세대 카운터를 증가시켜 이전 스트림 콜백이 UI에 영향을 주지 않게 한다.
+   * 서버에서 완료된 메시지를 불러온다.
    */
   const loadChat = useCallback(async (targetChatId: string) => {
     const uuid = getUserUuid();
     if (!uuid) return;
+
+    // 세대 증가 → 이전 스트림 콜백 무효화 (스트림 자체는 유지)
+    generationRef.current++;
+    setIsLoading(false);
 
     try {
       const detail = await fetchChatDetail(targetChatId, uuid);
@@ -218,9 +244,12 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
   }, []);
 
   /**
-   * 메시지 초기화
+   * 새 채팅으로 초기화 (새 세션 시작 시)
+   *
+   * 진행 중인 스트림을 중단하고 모든 상태를 초기화한다.
    */
   const clearMessages = useCallback(() => {
+    generationRef.current++; // 콜백 무효화
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -236,6 +265,7 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
+    generationRef.current++;
     setMessages((prev) => {
       const idx = prev.findIndex((m) => m.id === messageId);
       if (idx === -1) return prev;

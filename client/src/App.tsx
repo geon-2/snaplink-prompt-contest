@@ -114,8 +114,13 @@ export default function App() {
     (chatId: string | null) => {
       setIsProPanelOpen(true);
       setActiveProChatId(chatId);
-      proChat.clearMessages();
-      if (chatId) proChat.loadChat(chatId);
+      if (chatId) {
+        // 기존 세션 전환 — 스트림 중단 없이 세대 카운터만 갱신
+        proChat.loadChat(chatId);
+      } else {
+        // 새 채팅 시작 — 스트림 중단 + 초기화
+        proChat.clearMessages();
+      }
     },
     [proChat]
   );
@@ -124,8 +129,11 @@ export default function App() {
     (chatId: string | null) => {
       setIsFlashPanelOpen(true);
       setActiveFlashChatId(chatId);
-      flashChat.clearMessages();
-      if (chatId) flashChat.loadChat(chatId);
+      if (chatId) {
+        flashChat.loadChat(chatId);
+      } else {
+        flashChat.clearMessages();
+      }
     },
     [flashChat]
   );
