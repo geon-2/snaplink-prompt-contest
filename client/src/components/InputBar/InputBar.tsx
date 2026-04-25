@@ -40,17 +40,21 @@ export default function InputBar({
     return () => urls.forEach((url) => URL.revokeObjectURL(url));
   }, [filesToUpload]);
 
+  const hasFiles = filesToUpload.length > 0;
+  const hasText = value.trim().length > 0;
+  const canSubmit = hasText || hasFiles;
+
   const handleSubmit = () => {
     if (disabled) return;
     
-    if (!value.trim()) {
+    if (!canSubmit) {
       setShowError(true);
       // 잠시 후 에러 상태 해제 (애니메이션 반복을 위해)
       setTimeout(() => setShowError(false), 500);
       return;
     }
 
-    onSend(value.trim(), filesToUpload.length > 0 ? filesToUpload : undefined);
+    onSend(value.trim(), hasFiles ? filesToUpload : undefined);
     setFilesToUpload([]);
     setShowError(false);
   };
@@ -154,7 +158,7 @@ export default function InputBar({
         <button
           className={`flex items-center justify-center w-11 h-11 min-w-11 rounded-xl shadow-lg transition-all shrink-0 disabled:opacity-40 disabled:cursor-not-allowed text-white ${isLoading ? 'bg-red-500 shadow-red-500/20' : (variant === 'flash' ? 'bg-accent-flash shadow-accent-flash/20' : 'bg-accent-pro shadow-accent-pro/20 hover:scale-105 active:scale-95')}`}
           onClick={isLoading ? onStop : handleSubmit}
-          disabled={!isLoading && (disabled || !value.trim())}
+          disabled={!isLoading && (disabled || !canSubmit)}
           aria-label={isLoading ? '생성 중단' : '메시지 전송'}
           id={`send-btn-${variant}`}
         >

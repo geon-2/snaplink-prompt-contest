@@ -14,11 +14,12 @@ const API_BASE = '/api';
  * 요청 중단(signal)은 서버 미지원으로 비활성화.
  */
 export async function streamChatCompletion(params: ChatCompletionParams): Promise<void> {
-  const { uuid, chatId, type, text, files, onMeta, onTextDelta, onImage, onDone, onError } = params;
+  const { uuid, chatId, partnerChatId, type, text, files, signal, onMeta, onTextDelta, onImage, onDone, onError } = params;
 
   const formData = new FormData();
   formData.append('uuid', uuid);
   if (chatId) formData.append('chat_id', chatId);
+  if (partnerChatId) formData.append('partner_chat_id', partnerChatId);
   formData.append('type', type);
   if (text) formData.append('text', text);
   if (files?.length) files.forEach((f) => formData.append('files', f));
@@ -29,6 +30,7 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
       method: 'POST',
       body: formData,
       credentials: 'include',
+      signal,
     });
   } catch (err) {
     onError({ message: '서버에 연결할 수 없습니다.' });

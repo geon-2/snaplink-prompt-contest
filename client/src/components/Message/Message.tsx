@@ -12,6 +12,9 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
   // 이미지 로딩 Progress
   const [imageLoaded, setImageLoaded] = useState(false);
 
+  // 사용자 첨부 이미지 로딩 에러 방어
+  const [failedImages, setFailedImages] = useState<Set<number>>(new Set());
+
   useEffect(() => {
     if (contentRef.current) {
       contentRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -43,7 +46,12 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
   };
 
   // imageDataUrl(base64) 우선, 없으면 S3 key → URL 변환
-  const aiImageUrl = imageDataUrl ?? (imageS3Key ? getImageUrl(imageS3Key) : null);
+  const aiImageUrl = imageDataUrl || (imageS3Key ? getImageUrl(imageS3Key) : null);
+
+  // 이미지 URL이 변경되면 로딩 상태 리셋
+  useEffect(() => {
+    setImageLoaded(false);
+  }, [aiImageUrl]);
 
   return (
     <div
@@ -63,13 +71,16 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
           {isUser && attachedImages && attachedImages.length > 0 && (
             <div className={`flex flex-wrap gap-2 mb-3 ${content ? '' : 'mb-0'}`}>
               {attachedImages.map((img: string, i: number) => (
-                <div key={i} className="rounded-xl overflow-hidden border-2 border-white/20 shadow-md">
-                  <img
-                    src={img}
-                    alt="첨부 이미지"
-                    className="max-w-[220px] max-h-[220px] object-cover"
-                  />
-                </div>
+                !failedImages.has(i) && (
+                  <div key={i} className="rounded-xl overflow-hidden border-2 border-white/20 shadow-md">
+                    <img
+                      src={img}
+                      alt="첨부 이미지"
+                      className="max-w-[220px] max-h-[220px] object-cover"
+                      onError={() => setFailedImages(prev => new Set(prev).add(i))}
+                    />
+                  </div>
+                )
               ))}
             </div>
           )}
@@ -107,11 +118,17 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
         {/* AI가 생성한 이미지 (기존 유지) */}
         {!isUser && aiImageUrl && !isGenerating && (
           <div className="mt-4 rounded-2xl overflow-hidden relative self-start bg-slate-100 border border-slate-200 shadow-xl group/img max-w-[480px]">
+            {!imageLoaded && (
+              <div className="flex items-center justify-center py-10 px-8">
+                <div className="w-8 h-8 border-3 border-slate-300 border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
             <img
               src={aiImageUrl}
               alt="생성된 이미지"
-              className={`block w-full h-auto rounded-2xl transition-all duration-700 ease-out ${imageLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+              className={`block w-full h-auto rounded-2xl transition-all duration-700 ease-out ${imageLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95 h-0'}`}
               onLoad={() => setImageLoaded(true)}
+              onError={() => setImageLoaded(true)}
               loading="lazy"
             />
           </div>
