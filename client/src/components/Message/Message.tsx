@@ -102,24 +102,31 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm]}
                   components={{
-                    strong: ({node, ...props}) => <strong className="font-extrabold" {...props} />,
-                    code: ({node, inline, className, children, ...props}: any) => {
+                    strong: ({node, ...props}) => <strong className="font-extrabold text-[1.05em]" {...props} />,
+                    code: ({node, className, children, ...props}: any) => {
                       const match = /language-(\w+)/.exec(className || '');
-                      return !inline && match ? (
-                        <pre className="bg-slate-50 border border-border-default rounded-xl p-4 my-3 overflow-x-auto font-mono text-[13px] leading-relaxed shadow-inner">
+                      const isInline = !match;
+                      return !isInline ? (
+                        <pre className="bg-slate-900 text-slate-100 border border-slate-700/60 rounded-xl p-4 my-3 overflow-x-auto font-mono text-[13px] leading-relaxed shadow-lg">
                           <code className={className} {...props}>
                             {children}
                           </code>
                         </pre>
                       ) : (
-                        <code className="font-mono bg-slate-100 border border-slate-200 px-[6px] py-[2px] rounded-[4px] text-[0.85em] text-accent-pro" {...props}>
+                        <code className={`font-mono px-[6px] py-[2px] rounded-[4px] text-[0.85em] ${isUser ? 'bg-white/20 text-white' : 'bg-slate-100 border border-slate-200 text-accent-pro/90'}`} {...props}>
                           {children}
                         </code>
                       );
                     },
-                    h2: ({node, ...props}) => <strong className="text-[17px] font-black block mt-6 mb-2" {...props} />,
-                    blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-accent-pro/30 bg-accent-pro/[0.03] pl-4 py-2 my-4 font-medium italic opacity-80" {...props} />,
-                    p: ({node, ...props}) => <p className="mb-2 last:mb-0 whitespace-pre-wrap" {...props} />,
+                    h1: ({node, ...props}) => <h1 className="text-xl font-bold mt-5 mb-2 border-b border-black/10 pb-1" {...props} />,
+                    h2: ({node, ...props}) => <h2 className="text-[17px] font-black mt-5 mb-2" {...props} />,
+                    h3: ({node, ...props}) => <h3 className="text-base font-bold mt-4 mb-2" {...props} />,
+                    blockquote: ({node, ...props}) => <blockquote className={`border-l-4 pl-4 py-2 my-4 font-medium italic opacity-90 ${isUser ? 'border-white/40 bg-white/10' : 'border-accent-pro/30 bg-accent-pro/[0.03]'}`} {...props} />,
+                    p: ({node, ...props}) => <p className="mb-2.5 last:mb-0 leading-[1.6]" {...props} />,
+                    ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1 block" {...props} />,
+                    ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1 block" {...props} />,
+                    li: ({node, ...props}) => <li className="pl-1" {...props} />,
+                    a: ({node, ...props}) => <a className={`${isUser ? 'text-white underline' : 'text-blue-500 hover:text-blue-600'} hover:underline font-medium`} target="_blank" rel="noopener noreferrer" {...props} />,
                   }}
                 >
                   {content}
