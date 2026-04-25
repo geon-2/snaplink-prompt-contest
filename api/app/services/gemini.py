@@ -31,11 +31,19 @@ class GeminiImageEvent:
     thought_signature: str | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class GeminiUsageTokenDetail:
+    modality: str
+    token_count: int
+
+
 @dataclass(slots=True)
 class GeminiUsageMetadata:
     prompt_token_count: int = 0
     candidates_token_count: int = 0
     total_token_count: int = 0
+    prompt_token_details: tuple[GeminiUsageTokenDetail, ...] = ()
+    candidates_token_details: tuple[GeminiUsageTokenDetail, ...] = ()
 
 
 @dataclass(slots=True)
@@ -166,6 +174,8 @@ class GeminiService:
                     prompt_token_count=_int_value(usage_metadata.get("promptTokenCount")),
                     candidates_token_count=_int_value(usage_metadata.get("candidatesTokenCount")),
                     total_token_count=_int_value(usage_metadata.get("totalTokenCount")),
+                    prompt_token_details=_parse_token_details(usage_metadata.get("promptTokensDetails")),
+                    candidates_token_details=_parse_token_details(usage_metadata.get("candidatesTokensDetails")),
                 )
             )
 
@@ -228,3 +238,23 @@ def _int_value(value: object) -> int:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return 0
+
+
+def _parse_token_details(value: object) -> tuple[GeminiUsageTokenDetail, ...]:
+    if not isinstance(value, list):
+        return ()
+
+    details: list[GeminiUsageTokenDetail] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        modality = item.get("modality")
+        if not isinstance(modality, str) or not modality:
+            continue
+        details.append(
+            GeminiUsageTokenDetail(
+                modality=modality.upper(),
+                token_count=_int_value(item.get("tokenCount")),
+            )
+        )
+    return tuple(details)

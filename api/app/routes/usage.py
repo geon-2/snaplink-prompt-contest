@@ -25,11 +25,16 @@ def get_my_usage(
     snapshot = get_usage_snapshot(
         db_session=db_session,
         api_key_hash=hash_api_key(user.api_key),
-        usage_limit_usd=Decimal(str(settings.usage_limit_usd)),
+        usage_limit_krw=Decimal(str(settings.usage_limit_krw)),
     )
     return UsageQuotaResponse(
         used_usd=snapshot.used_usd,
         remaining_usd=snapshot.remaining_usd,
         limit_usd=snapshot.limit_usd,
+        used_krw=snapshot.used_krw,
+        remaining_krw=snapshot.remaining_krw,
+        limit_krw=snapshot.limit_krw,
+        usd_to_krw_rate=snapshot.usd_to_krw_rate,
+        exchange_rate_date=snapshot.exchange_rate_date,
         quota_exceeded=snapshot.quota_exceeded,
     )

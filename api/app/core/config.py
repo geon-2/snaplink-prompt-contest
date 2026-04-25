@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     s3_bucket: str = "revede"
     s3_prefix: str = "prompt"
     temp_upload_dir: Path = Path(".tmp/uploads")
-    usage_limit_usd: float = 10.0
+    usage_limit_krw: int = 100000
 
     model_config = SettingsConfigDict(
         env_file=".env",

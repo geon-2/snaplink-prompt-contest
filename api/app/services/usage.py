@@ -8,9 +8,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.usage_ledger import UsageLedger
+from app.services.gemini import GeminiUsageTokenDetail
 
 
 USD_QUANTIZE = Decimal("0.000001")
+KRW_QUANTIZE = Decimal("1")
+APRIL_2026_USD_TO_KRW = Decimal("1504.808272")
+APRIL_2026_EXCHANGE_RATE_DATE = "2026-04-01"
 
 
 @dataclass(frozen=True)
@@ -29,6 +33,11 @@ class UsageQuotaSnapshot:
     used_usd: Decimal
     remaining_usd: Decimal
     limit_usd: Decimal
+    used_krw: Decimal
+    remaining_krw: Decimal
+    limit_krw: Decimal
+    usd_to_krw_rate: Decimal
+    exchange_rate_date: str
     quota_exceeded: bool
 
 
@@ -57,6 +66,8 @@ def calculate_usage_cost(
     request_type: str,
     prompt_tokens: int = 0,
     candidate_tokens: int = 0,
+    prompt_token_details: tuple[GeminiUsageTokenDetail, ...] = (),
+    candidate_token_details: tuple[GeminiUsageTokenDetail, ...] = (),
     generated_image_count: int = 0,
     image_size: str = "1k",
 ) -> UsageCostBreakdown:
@@ -66,6 +77,8 @@ def calculate_usage_cost(
         return _calculate_image_cost(
             prompt_tokens=prompt_tokens,
             candidate_tokens=candidate_tokens,
+            prompt_token_details=prompt_token_details,
+            candidate_token_details=candidate_token_details,
             generated_image_count=generated_image_count,
             image_size=image_size,
         )
@@ -96,15 +109,29 @@ def get_ledger_usage_total(*, db_session: Session, api_key_hash: str) -> Decimal
     return _quantize(Decimal(str(total or 0)))
 
 
-def build_usage_snapshot(*, used_usd: Decimal, usage_limit_usd: Decimal) -> UsageQuotaSnapshot:
+def build_usage_snapshot(
+    *,
+    used_usd: Decimal,
+    usage_limit_krw: Decimal,
+    usd_to_krw_rate: Decimal = APRIL_2026_USD_TO_KRW,
+    exchange_rate_date: str = APRIL_2026_EXCHANGE_RATE_DATE,
+) -> UsageQuotaSnapshot:
     normalized_used = _quantize(used_usd)
-    normalized_limit = _quantize(usage_limit_usd)
-    remaining = _quantize(max(normalized_limit - normalized_used, Decimal("0")))
+    normalized_limit_krw = _quantize_krw(usage_limit_krw)
+    normalized_used_krw = _quantize_krw(normalized_used * usd_to_krw_rate)
+    normalized_limit_usd = _quantize(normalized_limit_krw / usd_to_krw_rate)
+    normalized_remaining_usd = _quantize(max(normalized_limit_usd - normalized_used, Decimal("0")))
+    normalized_remaining_krw = _quantize_krw(max(normalized_limit_krw - normalized_used_krw, Decimal("0")))
     return UsageQuotaSnapshot(
         used_usd=normalized_used,
-        remaining_usd=remaining,
-        limit_usd=normalized_limit,
-        quota_exceeded=normalized_used >= normalized_limit,
+        remaining_usd=normalized_remaining_usd,
+        limit_usd=normalized_limit_usd,
+        used_krw=normalized_used_krw,
+        remaining_krw=normalized_remaining_krw,
+        limit_krw=normalized_limit_krw,
+        usd_to_krw_rate=usd_to_krw_rate,
+        exchange_rate_date=exchange_rate_date,
+        quota_exceeded=normalized_used_krw >= normalized_limit_krw,
     )
 
 
@@ -112,10 +139,17 @@ def get_usage_snapshot(
     *,
     db_session: Session,
     api_key_hash: str,
-    usage_limit_usd: Decimal,
+    usage_limit_krw: Decimal,
+    usd_to_krw_rate: Decimal = APRIL_2026_USD_TO_KRW,
+    exchange_rate_date: str = APRIL_2026_EXCHANGE_RATE_DATE,
 ) -> UsageQuotaSnapshot:
     used_usd = get_ledger_usage_total(db_session=db_session, api_key_hash=api_key_hash)
-    return build_usage_snapshot(used_usd=used_usd, usage_limit_usd=usage_limit_usd)
+    return build_usage_snapshot(
+        used_usd=used_usd,
+        usage_limit_krw=usage_limit_krw,
+        usd_to_krw_rate=usd_to_krw_rate,
+        exchange_rate_date=exchange_rate_date,
+    )
 
 
 def _calculate_chat_cost(*, prompt_tokens: int, candidate_tokens: int) -> UsageCostBreakdown:
@@ -140,13 +174,25 @@ def _calculate_image_cost(
     *,
     prompt_tokens: int,
     candidate_tokens: int,
+    prompt_token_details: tuple[GeminiUsageTokenDetail, ...],
+    candidate_token_details: tuple[GeminiUsageTokenDetail, ...],
     generated_image_count: int,
     image_size: str,
 ) -> UsageCostBreakdown:
-    per_image = PRICING["image"]["per_image"][image_size]
-    input_cost = _quantize(Decimal(prompt_tokens) * PRICING["image"]["input_per_token"])
-    output_cost = _quantize(Decimal(candidate_tokens) * PRICING["image"]["text_output_per_token"])
-    image_cost = _quantize(Decimal(generated_image_count) * per_image)
+    input_token_count = sum(detail.token_count for detail in prompt_token_details) or prompt_tokens
+    image_output_tokens = sum(
+        detail.token_count for detail in candidate_token_details if detail.modality == "IMAGE"
+    )
+    text_output_tokens = sum(
+        detail.token_count for detail in candidate_token_details if detail.modality != "IMAGE"
+    )
+
+    input_cost = _quantize(Decimal(input_token_count) * PRICING["image"]["input_per_token"])
+    output_cost = _quantize(Decimal(text_output_tokens) * PRICING["image"]["text_output_per_token"])
+    if image_output_tokens:
+        image_cost = _quantize(Decimal(image_output_tokens) * (Decimal("60.00") / Decimal("1000000")))
+    else:
+        image_cost = _quantize(Decimal(generated_image_count) * PRICING["image"]["per_image"][image_size])
     total_cost = _quantize(input_cost + output_cost + image_cost)
     return UsageCostBreakdown(
         prompt_tokens=prompt_tokens,
@@ -161,3 +207,7 @@ def _calculate_image_cost(
 
 def _quantize(value: Decimal) -> Decimal:
     return value.quantize(USD_QUANTIZE, rounding=ROUND_HALF_UP)
+
+
+def _quantize_krw(value: Decimal) -> Decimal:
+    return value.quantize(KRW_QUANTIZE, rounding=ROUND_HALF_UP)

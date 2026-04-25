@@ -11,7 +11,13 @@ from app.models.history import History
 from app.models.message import Message
 from app.models.user import User
 from app.models.usage_ledger import UsageLedger
-from app.services.gemini import GeminiImageEvent, GeminiTextEvent, GeminiUsageEvent, GeminiUsageMetadata
+from app.services.gemini import (
+    GeminiImageEvent,
+    GeminiTextEvent,
+    GeminiUsageEvent,
+    GeminiUsageMetadata,
+    GeminiUsageTokenDetail,
+)
 
 
 def test_signup_creates_user_and_sets_plain_cookies(
@@ -68,6 +74,7 @@ def test_chat_completion_streams_text_and_persists_history(
     assert "world" in response.text
     assert "event: done" in response.text
     assert '"cost_usd": "0.026000"' in response.text
+    assert '"cost_krw": "39"' in response.text
 
     with session_factory() as session:
         chats = session.scalars(select(Chat)).all()
@@ -101,8 +108,13 @@ def test_chat_completion_streams_text_and_persists_history(
     assert usage_response.status_code == 200
     assert usage_response.json() == {
         "used_usd": "0.026000",
-        "remaining_usd": "9.974000",
-        "limit_usd": "10.000000",
+        "remaining_usd": "66.427649",
+        "limit_usd": "66.453649",
+        "used_krw": "39",
+        "remaining_krw": "99961",
+        "limit_krw": "100000",
+        "usd_to_krw_rate": "1504.808272",
+        "exchange_rate_date": "2026-04-01",
         "quota_exceeded": False,
     }
 
@@ -119,7 +131,14 @@ def test_image_completion_uploads_to_storage_and_returns_s3_keys(
 
     fake_gemini_service.next_events = [
         GeminiImageEvent(data=b"generated-image", mime_type="image/png"),
-        GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
+        GeminiUsageEvent(
+            metadata=GeminiUsageMetadata(
+                prompt_token_count=100,
+                candidates_token_count=1120,
+                prompt_token_details=(GeminiUsageTokenDetail(modality="TEXT", token_count=100),),
+                candidates_token_details=(GeminiUsageTokenDetail(modality="IMAGE", token_count=1120),),
+            )
+        ),
     ]
 
     response = client.post(
@@ -155,7 +174,7 @@ def test_image_completion_uploads_to_storage_and_returns_s3_keys(
         assert ledger.request_type == "image"
         assert ledger.generated_image_count == 1
         assert ledger.image_size == "1k"
-        assert ledger.total_cost_usd == Decimal("0.067200")
+        assert ledger.total_cost_usd == Decimal("0.067250")
 
         list_response = client.get("/chats", params={"uuid": user_uuid})
         assert list_response.status_code == 200
@@ -182,7 +201,14 @@ def test_image_completion_replays_thought_signatures_for_follow_up_edits(
 
     fake_gemini_service.next_events = [
         GeminiImageEvent(data=b"generated-image-1", mime_type="image/png", thought_signature="sig-image-1"),
-        GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
+        GeminiUsageEvent(
+            metadata=GeminiUsageMetadata(
+                prompt_token_count=100,
+                candidates_token_count=1120,
+                prompt_token_details=(GeminiUsageTokenDetail(modality="TEXT", token_count=100),),
+                candidates_token_details=(GeminiUsageTokenDetail(modality="IMAGE", token_count=1120),),
+            )
+        ),
     ]
 
     first_response = client.post(
@@ -198,7 +224,14 @@ def test_image_completion_replays_thought_signatures_for_follow_up_edits(
 
     fake_gemini_service.next_events = [
         GeminiImageEvent(data=b"generated-image-2", mime_type="image/png", thought_signature="sig-image-2"),
-        GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
+        GeminiUsageEvent(
+            metadata=GeminiUsageMetadata(
+                prompt_token_count=100,
+                candidates_token_count=1120,
+                prompt_token_details=(GeminiUsageTokenDetail(modality="TEXT", token_count=100),),
+                candidates_token_details=(GeminiUsageTokenDetail(modality="IMAGE", token_count=1120),),
+            )
+        ),
     ]
 
     second_response = client.post(
@@ -248,7 +281,14 @@ def test_generated_images_api_returns_paginated_user_gallery(
     for prompt in ("first image", "second image", "third image"):
         fake_gemini_service.next_events = [
             GeminiImageEvent(data=prompt.encode("utf-8"), mime_type="image/png"),
-            GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
+            GeminiUsageEvent(
+                metadata=GeminiUsageMetadata(
+                    prompt_token_count=100,
+                    candidates_token_count=1120,
+                    prompt_token_details=(GeminiUsageTokenDetail(modality="TEXT", token_count=100),),
+                    candidates_token_details=(GeminiUsageTokenDetail(modality="IMAGE", token_count=1120),),
+                )
+            ),
         ]
         response = client.post(
             "/chat/completion",
@@ -259,7 +299,14 @@ def test_generated_images_api_returns_paginated_user_gallery(
 
     fake_gemini_service.next_events = [
         GeminiImageEvent(data=b"other-user-image", mime_type="image/png"),
-        GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
+        GeminiUsageEvent(
+            metadata=GeminiUsageMetadata(
+                prompt_token_count=100,
+                candidates_token_count=1120,
+                prompt_token_details=(GeminiUsageTokenDetail(modality="TEXT", token_count=100),),
+                candidates_token_details=(GeminiUsageTokenDetail(modality="IMAGE", token_count=1120),),
+            )
+        ),
     ]
     other_response = client.post(
         "/chat/completion",
@@ -336,7 +383,7 @@ def test_chat_completion_continues_even_when_usage_exceeds_limit(
 
     fake_gemini_service.next_events = [
         GeminiTextEvent(text="still allowed"),
-        GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=1_000, candidates_token_count=1_000_000)),
+        GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=1_000, candidates_token_count=6_000_000)),
     ]
 
     response = client.post(
@@ -350,8 +397,13 @@ def test_chat_completion_continues_even_when_usage_exceeds_limit(
     usage_response = client.get("/usage/me")
     assert usage_response.status_code == 200
     assert usage_response.json() == {
-        "used_usd": "12.002000",
+        "used_usd": "72.002000",
         "remaining_usd": "0.000000",
-        "limit_usd": "10.000000",
+        "limit_usd": "66.453649",
+        "used_krw": "108351",
+        "remaining_krw": "0",
+        "limit_krw": "100000",
+        "usd_to_krw_rate": "1504.808272",
+        "exchange_rate_date": "2026-04-01",
         "quota_exceeded": True,
     }

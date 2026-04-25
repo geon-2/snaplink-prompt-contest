@@ -60,6 +60,7 @@ from app.services.usage import (
 router = APIRouter(tags=["chat"])
 
 IMAGE_PREVIEW_TEXT = "[image]"
+THOUGHT_SIGNATURE_FALLBACK = "skip_thought_signature_validator"
 
 
 @dataclass(slots=True)
@@ -231,6 +232,8 @@ def chat_completion(
                     request_type=payload.type.value,
                     prompt_tokens=usage_metadata.prompt_token_count,
                     candidate_tokens=usage_metadata.candidates_token_count,
+                    prompt_token_details=usage_metadata.prompt_token_details,
+                    candidate_token_details=usage_metadata.candidates_token_details,
                     generated_image_count=len(assistant_images),
                     image_size=payload.image_size.value,
                 )
@@ -249,7 +252,7 @@ def chat_completion(
                 worker_session.flush()
                 usage_snapshot = build_usage_snapshot(
                     used_usd=get_ledger_usage_total(db_session=worker_session, api_key_hash=api_key_hash),
-                    usage_limit_usd=Decimal(str(settings.usage_limit_usd)),
+                    usage_limit_krw=Decimal(str(settings.usage_limit_krw)),
                 )
                 worker_session.commit()
                 event_queue.put(
@@ -258,9 +261,15 @@ def chat_completion(
                         {
                             "chat_id": str(chat.chat_id),
                             "cost_usd": str(cost_breakdown.total_cost_usd),
+                            "cost_krw": str((cost_breakdown.total_cost_usd * usage_snapshot.usd_to_krw_rate).quantize(Decimal("1"))),
                             "used_usd": str(usage_snapshot.used_usd),
                             "remaining_usd": str(usage_snapshot.remaining_usd),
                             "limit_usd": str(usage_snapshot.limit_usd),
+                            "used_krw": str(usage_snapshot.used_krw),
+                            "remaining_krw": str(usage_snapshot.remaining_krw),
+                            "limit_krw": str(usage_snapshot.limit_krw),
+                            "usd_to_krw_rate": str(usage_snapshot.usd_to_krw_rate),
+                            "exchange_rate_date": usage_snapshot.exchange_rate_date,
                             "quota_exceeded": usage_snapshot.quota_exceeded,
                         },
                     )
@@ -620,8 +629,9 @@ def _build_gemini_contents(
 
         if row.part_type == "text" and (row.text_content is not None or row.thought_signature):
             text_part: dict[str, object] = {"text": row.text_content or ""}
-            if row.thought_signature:
-                text_part["thoughtSignature"] = row.thought_signature
+            thought_signature = _history_thought_signature(row=row, inline_images=inline_images)
+            if thought_signature:
+                text_part["thoughtSignature"] = thought_signature
             current_parts.append(text_part)
             continue
 
@@ -635,8 +645,9 @@ def _build_gemini_contents(
                         "data": base64.b64encode(file_bytes).decode("utf-8"),
                     }
                 }
-                if row.thought_signature:
-                    image_part["thoughtSignature"] = row.thought_signature
+                thought_signature = _history_thought_signature(row=row, inline_images=inline_images)
+                if thought_signature:
+                    image_part["thoughtSignature"] = thought_signature
                 current_parts.append(image_part)
                 continue
             temp_path = _write_bytes_to_temp(
@@ -654,8 +665,9 @@ def _build_gemini_contents(
             finally:
                 _remove_temp_file(temp_path)
             image_part = gemini_service.build_file_part(uploaded_file)
-            if row.thought_signature:
-                image_part["thoughtSignature"] = row.thought_signature
+            thought_signature = _history_thought_signature(row=row, inline_images=inline_images)
+            if thought_signature:
+                image_part["thoughtSignature"] = thought_signature
             current_parts.append(image_part)
 
     if current_parts:
@@ -719,6 +731,14 @@ def _create_assistant_messages(
     chat.last_message_at = created_at
     chat.updated_at = created_at
     db_session.add(chat)
+
+
+def _history_thought_signature(*, row: History, inline_images: bool) -> str | None:
+    if row.thought_signature:
+        return row.thought_signature
+    if inline_images and row.role == MessageRole.ASSISTANT.value:
+        return THOUGHT_SIGNATURE_FALLBACK
+    return None
 
 
 def _create_usage_ledger(

@@ -21,7 +21,7 @@ os.environ.setdefault("AWS_REGION", "ap-northeast-2")
 os.environ.setdefault("S3_BUCKET", "test-bucket")
 os.environ.setdefault("S3_PREFIX", "tests")
 os.environ.setdefault("TEMP_UPLOAD_DIR", ".tmp/tests")
-os.environ.setdefault("USAGE_LIMIT_USD", "10")
+os.environ.setdefault("USAGE_LIMIT_KRW", "100000")
 
 from app.db.base import Base
 from app.db.session import get_db_session
@@ -32,6 +32,7 @@ from app.services.gemini import (
     GeminiUploadedFile,
     GeminiUsageEvent,
     GeminiUsageMetadata,
+    GeminiUsageTokenDetail,
     get_gemini_service,
 )
 from app.services.storage import get_storage_service
