@@ -6,8 +6,14 @@ import type { Message, ChatType, ApiMessage } from '../types';
 
 /**
  * API 메시지 → UI 메시지 변환
+ *
+ * image_url은 무시하고 image_s3_key → CloudFront URL로 변환.
+ * 사용자 메시지의 경우 S3 이미지를 attachedImages로 매핑하여
+ * 채팅 히스토리 재조회 시에도 첨부 이미지가 표시되게 한다.
  */
 function apiMessageToUiMessage(msg: ApiMessage): Message {
+  const imageFromS3 = msg.image_s3_key ? getImageUrl(msg.image_s3_key) : undefined;
+
   return {
     id: msg.message_id,
     role: msg.role,
@@ -15,8 +21,9 @@ function apiMessageToUiMessage(msg: ApiMessage): Message {
     timestamp: msg.created_at,
     type: msg.type,
     imageS3Key: msg.image_s3_key || undefined,
-    imageUrl: msg.image_url || (msg.image_s3_key ? getImageUrl(msg.image_s3_key) : undefined),
-    attachedImages: msg.attached_images,
+    // AI 메시지: imageUrl로 표시 / 사용자 메시지: attachedImages로 표시
+    imageUrl: msg.role === 'assistant' ? imageFromS3 : undefined,
+    attachedImages: msg.role === 'user' && imageFromS3 ? [imageFromS3] : undefined,
   };
 }
 
