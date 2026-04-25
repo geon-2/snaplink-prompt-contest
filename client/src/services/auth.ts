@@ -22,13 +22,6 @@ export async function signup(uuid: string, apiKey: string): Promise<void> {
     return;
   }
 
-  if (resp.status === 409) {
-    // 이미 등록된 UUID — 쿠키만 설정
-    document.cookie = `user_uuid=${uuid}; path=/; max-age=604800; samesite=lax`;
-    document.cookie = `user_api_key=${apiKey}; path=/; max-age=604800; samesite=lax`;
-    return;
-  }
-
   const body = await resp.json().catch(() => ({}));
   throw new Error(body.detail || `서버 오류 (${resp.status})`);
 }
