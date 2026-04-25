@@ -176,7 +176,7 @@ export default function Sidebar({
             <span className="text-[10px] font-black text-text-secondary uppercase tracking-[0.1em]">Usage</span>
           </div>
           <span className="text-[10px] font-mono font-bold text-accent-pro bg-white px-1.5 py-0.5 rounded border border-accent-pro/10 shadow-sm">
-            {usedKRW.toLocaleString('ko-KR')}₩ / {budgetKRW.toLocaleString('ko-KR')}₩
+            ₩{usedKRW.toLocaleString('ko-KR')} / ₩{budgetKRW.toLocaleString('ko-KR')}
           </span>
         </div>
         <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden relative">
