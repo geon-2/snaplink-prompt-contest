@@ -20,6 +20,8 @@ export default function InputBar({
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [showError, setShowError] = useState(false);
+  // 파일 input 리마운트용 key — 같은 파일 재선택 시 onChange 보장
+  const [fileInputKey, setFileInputKey] = useState(0);
 
   // 텍스트영역 자동 높이 조절
   useEffect(() => {
@@ -71,9 +73,8 @@ export default function InputBar({
     if (files && files.length > 0) {
       setFilesToUpload((prev) => [...prev, ...Array.from(files)]);
     }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    // key 변경으로 input 리마운트 → 같은 파일 재선택 시에도 onChange 트리거
+    setFileInputKey((k) => k + 1);
   };
 
   const handleRemoveFile = (index: number) => {
@@ -119,12 +120,7 @@ export default function InputBar({
         {/* 파일 첨부 버튼 */}
         <button
           className="flex items-center justify-center w-9 h-9 min-w-9 rounded-lg text-slate-400 hover:text-accent-pro hover:bg-accent-pro/10 transition-all shrink-0"
-          onClick={() => {
-            if (fileInputRef.current) {
-              fileInputRef.current.value = '';
-              fileInputRef.current.click();
-            }
-          }}
+          onClick={() => fileInputRef.current?.click()}
           disabled={disabled}
           type="button"
           aria-label="이미지 첨부"
@@ -136,6 +132,7 @@ export default function InputBar({
           </svg>
         </button>
         <input
+          key={fileInputKey}
           ref={fileInputRef}
           type="file"
           className="hidden"
