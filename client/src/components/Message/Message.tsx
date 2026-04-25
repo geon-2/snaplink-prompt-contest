@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getImageUrl } from '../../utils/s3';
 import ImageModal from '../ImageModal/ImageModal';
 
@@ -29,24 +31,6 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
     if (!date) return '';
     const d = new Date(date);
     return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-  };
-
-  // 간단한 마크다운 → HTML 변환
-  const renderContent = (text: string) => {
-    if (!text) return null;
-
-    let html = text
-      // 볼드
-      .replace(/\*\*(.*?)\*\*/g, '<strong class="font-extrabold text-text-primary">$1</strong>')
-      // 인라인 코드
-      .replace(/`([^`]+)`/g, '<code class="font-mono bg-slate-100 border border-slate-200 px-[6px] py-[2px] rounded-[4px] text-[0.85em] text-accent-pro">$1</code>')
-      // 코드 블록
-      .replace(/```([\s\S]*?)```/g, '<pre class="bg-slate-50 border border-border-default rounded-xl p-[16px] my-[10px] overflow-x-auto font-mono text-[13px] leading-relaxed shadow-inner"><code class="bg-transparent p-0 text-text-primary">$1</code></pre>')
-      // 헤더
-      .replace(/^## (.+)$/gm, '<strong class="text-[17px] font-black block mt-6 mb-2 text-text-primary">$1</strong>')
-      .replace(/^> (.+)$/gm, '<blockquote class="border-l-4 border-accent-pro/30 bg-accent-pro/[0.03] pl-4 py-2 text-text-secondary my-4 font-medium italic">$1</blockquote>');
-
-    return <span dangerouslySetInnerHTML={{ __html: html }} className="break-words whitespace-pre-wrap leading-[1.7]" />;
   };
 
   // imageDataUrl(base64) 우선, 없으면 S3 key → URL 변환
@@ -112,8 +96,32 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
 
           {/* 실제 텍스트 컨텐츠 */}
           {content && (
-            <div className={`break-words whitespace-pre-wrap text-[14.5px] leading-relaxed ${isUser ? 'text-white' : 'text-text-primary'}`}>
-              {isUser ? content : renderContent(content)}
+            <div className={`break-words whitespace-normal text-[14.5px] leading-relaxed markdown-body ${isUser ? 'text-white' : 'text-text-primary'}`}>
+              <ReactMarkdown 
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  strong: ({node, ...props}) => <strong className="font-extrabold" {...props} />,
+                  code: ({node, inline, className, children, ...props}: any) => {
+                    const match = /language-(\w+)/.exec(className || '');
+                    return !inline && match ? (
+                      <pre className="bg-slate-50 border border-border-default rounded-xl p-4 my-3 overflow-x-auto font-mono text-[13px] leading-relaxed shadow-inner">
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      </pre>
+                    ) : (
+                      <code className="font-mono bg-slate-100 border border-slate-200 px-[6px] py-[2px] rounded-[4px] text-[0.85em] text-accent-pro" {...props}>
+                        {children}
+                      </code>
+                    );
+                  },
+                  h2: ({node, ...props}) => <strong className="text-[17px] font-black block mt-6 mb-2" {...props} />,
+                  blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-accent-pro/30 bg-accent-pro/[0.03] pl-4 py-2 my-4 font-medium italic opacity-80" {...props} />,
+                  p: ({node, ...props}) => <p className="mb-2 last:mb-0 whitespace-pre-wrap" {...props} />,
+                }}
+              >
+                {content}
+              </ReactMarkdown>
               {isStreaming && content && <span className="inline-block w-[2.5px] h-[1.1em] bg-accent-pro ml-1 align-middle animate-pulse" />}
             </div>
           )}
