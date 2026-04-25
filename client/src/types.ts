@@ -20,6 +20,8 @@ export interface SSETextDeltaEvent {
 
 export interface SSEImageEvent {
   s3_key: string;
+  data?: string;
+  mime_type?: string;
 }
 
 export interface SSEErrorEvent {
@@ -53,6 +55,7 @@ export interface ApiMessage {
   type: ChatType;
   text_content: string | null;
   image_s3_key: string | null;
+  image_url?: string;
   attached_images?: string[]; // 사용자가 첨부한 이미지 (Base64 등)
   created_at: string;
 }
@@ -75,6 +78,7 @@ export interface Message {
   isStreaming?: boolean;
   isGenerating?: boolean;
   imageS3Key?: string;
+  imageUrl?: string;   // base64 data URL (신규 생성) or 직접 URL
   attachedImages?: string[];
   isError?: boolean;
 }

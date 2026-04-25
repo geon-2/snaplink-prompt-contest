@@ -14,11 +14,12 @@ const API_BASE = '/api';
  * 요청 중단(signal)은 서버 미지원으로 비활성화.
  */
 export async function streamChatCompletion(params: ChatCompletionParams): Promise<void> {
-  const { uuid, chatId, type, text, files, onMeta, onTextDelta, onImage, onDone, onError } = params;
+  const { uuid, chatId, partnerChatId, type, text, files, signal, onMeta, onTextDelta, onImage, onDone, onError } = params;
 
   const formData = new FormData();
   formData.append('uuid', uuid);
   if (chatId) formData.append('chat_id', chatId);
+  if (partnerChatId) formData.append('partner_chat_id', partnerChatId);
   formData.append('type', type);
   if (text) formData.append('text', text);
   if (files?.length) files.forEach((f) => formData.append('files', f));
@@ -29,6 +30,7 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
       method: 'POST',
       body: formData,
       credentials: 'include',
+      signal,
     });
   } catch (err) {
     onError({ message: '서버에 연결할 수 없습니다.' });
@@ -76,7 +78,7 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
                 onTextDelta({ delta: data.text });
                 break;
               case 'image':
-                onImage({ s3_key: data.s3_key });
+                onImage({ s3_key: data.s3_key, data: data.data, mime_type: data.mime_type });
                 break;
               case 'done':
                 onDone();
@@ -100,10 +102,15 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
 /**
  * GET /api/chats — 채팅 목록
  */
+export class UnauthorizedError extends Error {
+  constructor() { super('unauthorized'); }
+}
+
 export async function fetchChats(uuid: string): Promise<ChatListItem[]> {
   const resp = await fetch(`${API_BASE}/chats?uuid=${uuid}`, {
     credentials: 'include',
   });
+  if (resp.status === 401) throw new UnauthorizedError();
   if (!resp.ok) throw new Error(`채팅 목록 로드 실패 (${resp.status})`);
   return resp.json();
 }
@@ -136,6 +143,7 @@ export async function fetchChatDetail(chatId: string, uuid: string): Promise<Cha
     type: m.type,
     text_content: m.text_content,
     image_s3_key: m.image_s3_key,
+    image_url: m.image_url ?? undefined,
     created_at: m.created_at,
   }));
 

@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { streamChatCompletion, fetchChatDetail } from '../services/api';
 import { getUserUuid } from '../services/auth';
+import { getImageUrl } from '../utils/s3';
 import type { Message, ChatType, ApiMessage } from '../types';
 
 /**
@@ -13,8 +14,9 @@ function apiMessageToUiMessage(msg: ApiMessage): Message {
     content: msg.text_content ?? '',
     timestamp: msg.created_at,
     type: msg.type,
-    imageS3Key: msg.image_s3_key ?? undefined,
-    attachedImages: msg.attached_images, // 추가된 필드 매핑
+    imageS3Key: msg.image_s3_key || undefined,
+    imageUrl: msg.image_url || (msg.image_s3_key ? getImageUrl(msg.image_s3_key) : undefined),
+    attachedImages: msg.attached_images,
   };
 }
 
@@ -36,7 +38,7 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
    */
   const sendMessage = useCallback(
     async (prompt: string, files?: File[], partnerChatId?: string) => {
-      if (!prompt.trim() || isLoading) return;
+      if ((!prompt.trim() && (!files || files.length === 0)) || isLoading) return;
 
       const uuid = getUserUuid();
       if (!uuid) {
@@ -125,10 +127,18 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
           },
 
           onImage: (data) => {
+            let imageUrl: string | undefined;
+            if (data.data) {
+              // base64 인라인 데이터가 있으면 data URL 사용
+              imageUrl = `data:${data.mime_type ?? 'image/png'};base64,${data.data}`;
+            } else if (data.s3_key) {
+              // s3_key만 있으면 CloudFront URL로 변환
+              imageUrl = getImageUrl(data.s3_key);
+            }
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === resolvedAiMsgId || msg.id === tempAiMsgId
-                  ? { ...msg, imageS3Key: data.s3_key, isGenerating: false }
+                  ? { ...msg, imageS3Key: data.s3_key, imageUrl, isGenerating: false }
                   : msg
               )
             );

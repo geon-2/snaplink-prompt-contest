@@ -1,22 +1,16 @@
+const CDN_BASE = 'https://datsbgc37wc3i.cloudfront.net';
+
 /**
- * S3 key → 이미지 표시용 URL 변환
+ * S3 key → CloudFront CDN 이미지 URL 변환
  *
- * 환경변수 S3_BUCKET, AWS_REGION 필요.
- * 설정이 없으면 fallback으로 /api/images/ 프록시 경로 사용.
+ * CloudFront 배포를 통해 이미지를 서빙하므로 CDN URL에 key만 붙인다.
  */
 export function getImageUrl(s3Key: string): string {
-  const bucket = process.env.S3_BUCKET;
-  const region = process.env.AWS_REGION;
-
-  // Mock이나 절대 경로 URL인 경우 그대로 반환
   if (s3Key.startsWith('http') || s3Key.startsWith('//')) {
     return s3Key;
   }
 
-  if (bucket && region) {
-    return `https://${bucket}.s3.${region}.amazonaws.com/${s3Key}`;
-  }
-
-  // fallback: 백엔드 프록시를 통해 S3 이미지 제공
-  return `/api/images/${encodeURIComponent(s3Key)}`;
+  // key 앞의 슬래시 중복 방지
+  const normalizedKey = s3Key.startsWith('/') ? s3Key.slice(1) : s3Key;
+  return `${CDN_BASE}/${normalizedKey}`;
 }

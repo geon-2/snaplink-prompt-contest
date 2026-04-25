@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import mimetypes
 import re
@@ -12,11 +13,11 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.auth import authenticate_user_request
+from app.core.auth import authenticate_session_from_cookies, authenticate_user_request
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
 from app.models.chat import Chat
@@ -169,7 +170,11 @@ def chat_completion(
                         mime_type=event.mime_type,
                     )
                 )
-                yield _sse_event("image", {"s3_key": image_key})
+                yield _sse_event("image", {
+                    "s3_key": image_key,
+                    "data": base64.b64encode(event.data).decode(),
+                    "mime_type": event.mime_type,
+                })
 
             _create_assistant_messages(
                 db_session=db_session,
@@ -278,6 +283,7 @@ def get_chat_detail(
     chat_id: UUID,
     uuid: UUID = Query(...),
     db_session: Session = Depends(get_db_session),
+    storage_service: S3StorageService = Depends(get_storage_service),
 ) -> ChatDetailResponse:
     authenticate_user_request(request=request, requested_uuid=uuid, db_session=db_session)
     chat = db_session.scalar(select(Chat).where(Chat.chat_id == chat_id, Chat.user_uuid == uuid))
@@ -304,6 +310,7 @@ def get_chat_detail(
                 type=MessageType(message.type),
                 text_content=message.text_content,
                 image_s3_key=message.image_s3_key,
+                image_url=storage_service.generate_presigned_url(message.image_s3_key) if message.image_s3_key else None,
                 created_at=message.created_at,
             )
             for message in messages
@@ -352,6 +359,21 @@ def list_generated_images(
         total=total,
         has_next=offset + len(messages) < total,
     )
+
+
+@router.get("/images/{s3_key:path}")
+def get_image(
+    s3_key: str,
+    request: Request,
+    db_session: Session = Depends(get_db_session),
+    storage_service: S3StorageService = Depends(get_storage_service),
+) -> Response:
+    authenticate_session_from_cookies(request=request, db_session=db_session)
+    try:
+        data, content_type = storage_service.download_object(s3_key)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="image not found")
+    return Response(content=data, media_type=content_type or "image/png")
 
 
 def _normalize_text(value: str | None) -> str | None:

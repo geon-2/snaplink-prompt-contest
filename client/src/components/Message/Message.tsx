@@ -1,16 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { getImageUrl } from '../../utils/s3';
+import ImageModal from '../ImageModal/ImageModal';
 
 /**
  * 단일 채팅 메시지 컴포넌트
  */
 export default function Message({ message, variant = 'pro', onCopy }: any) {
-  const { role, content, timestamp, isStreaming, isGenerating, imageS3Key, isError, attachedImages } = message;
+  const { role, content, timestamp, isStreaming, isGenerating, imageS3Key, imageUrl: imageDataUrl, isError, attachedImages } = message;
   const isUser = role === 'user';
   const contentRef = useRef<HTMLDivElement>(null);
 
   // 이미지 로딩 Progress
   const [imageLoaded, setImageLoaded] = useState(false);
+
+  // 사용자 첨부 이미지 로딩 에러 방어
+  const [failedImages, setFailedImages] = useState<Set<number>>(new Set());
+
+  // 이미지 모달 상태
+  const [modalImageUrl, setModalImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (contentRef.current) {
@@ -42,8 +49,13 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
     return <span dangerouslySetInnerHTML={{ __html: html }} className="break-words whitespace-pre-wrap leading-[1.7]" />;
   };
 
-  // S3 key → URL 변환 (AI 생성 이미지용)
-  const aiImageUrl = imageS3Key ? getImageUrl(imageS3Key) : null;
+  // imageDataUrl(base64) 우선, 없으면 S3 key → URL 변환
+  const aiImageUrl = imageDataUrl || (imageS3Key ? getImageUrl(imageS3Key) : null);
+
+  // 이미지 URL이 변경되면 로딩 상태 리셋
+  useEffect(() => {
+    setImageLoaded(false);
+  }, [aiImageUrl]);
 
   return (
     <div
@@ -63,13 +75,16 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
           {isUser && attachedImages && attachedImages.length > 0 && (
             <div className={`flex flex-wrap gap-2 mb-3 ${content ? '' : 'mb-0'}`}>
               {attachedImages.map((img: string, i: number) => (
-                <div key={i} className="rounded-xl overflow-hidden border-2 border-white/20 shadow-md">
-                  <img
-                    src={img}
-                    alt="첨부 이미지"
-                    className="max-w-[220px] max-h-[220px] object-cover"
-                  />
-                </div>
+                !failedImages.has(i) && (
+                  <div key={i} className="rounded-xl overflow-hidden border-2 border-white/20 shadow-md">
+                    <img
+                      src={img}
+                      alt="첨부 이미지"
+                      className="max-w-[220px] max-h-[220px] object-cover"
+                      onError={() => setFailedImages(prev => new Set(prev).add(i))}
+                    />
+                  </div>
+                )
               ))}
             </div>
           )}
@@ -87,16 +102,10 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
 
           {/* 이미지 생성 중 (AI) */}
           {!isUser && isGenerating && (
-            <div className="flex flex-col items-center justify-center gap-4 py-12 px-8 min-h-[240px] bg-slate-50 rounded-2xl border border-dashed border-slate-300">
-              <div className="relative">
+            <div className="flex items-center justify-center py-10 px-8">
+              <div className="relative w-12 h-12">
                 <div className="w-12 h-12 border-4 border-accent-flash border-t-transparent rounded-full animate-spin" />
                 <div className="absolute inset-0 flex items-center justify-center text-lg">🎨</div>
-              </div>
-              <div className="text-[14px] font-black text-slate-500 text-center uppercase tracking-wide">
-                Image Generation in Progress...
-              </div>
-              <div className="w-[160px] h-[4px] bg-slate-200 rounded-full overflow-hidden mt-1 relative">
-                <div className="absolute top-0 left-0 h-full w-[40%] bg-accent-flash rounded-full animate-[shimmer_1.5s_infinite]" />
               </div>
             </div>
           )}
@@ -110,16 +119,39 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
           )}
         </div>
 
-        {/* AI가 생성한 이미지 (기존 유지) */}
+        {/* AI가 생성한 이미지 — 클릭 시 모달 확대 */}
         {!isUser && aiImageUrl && !isGenerating && (
-          <div className="mt-4 rounded-2xl overflow-hidden relative self-start bg-slate-100 border border-slate-200 shadow-xl group/img max-w-[480px]">
+          <div
+            className="mt-4 rounded-2xl overflow-hidden relative self-start bg-slate-100 border border-slate-200 shadow-xl group/img max-w-[480px] cursor-pointer"
+            onClick={() => setModalImageUrl(aiImageUrl)}
+          >
+            {!imageLoaded && (
+              <div className="flex items-center justify-center py-10 px-8">
+                <div className="w-8 h-8 border-3 border-slate-300 border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
             <img
               src={aiImageUrl}
               alt="생성된 이미지"
-              className={`block w-full h-auto rounded-2xl transition-all duration-700 ease-out ${imageLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+              className={`block w-full h-auto rounded-2xl transition-all duration-700 ease-out ${imageLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95 h-0'}`}
               onLoad={() => setImageLoaded(true)}
+              onError={() => setImageLoaded(true)}
               loading="lazy"
             />
+            {/* hover 오버레이 */}
+            {imageLoaded && (
+              <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition-all duration-200 flex items-center justify-center">
+                <div className="opacity-0 group-hover/img:opacity-100 transition-all duration-200 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 backdrop-blur-sm text-white text-[13px] font-bold border border-white/30 shadow-lg">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    <line x1="11" y1="8" x2="11" y2="14" />
+                    <line x1="8" y1="11" x2="14" y2="11" />
+                  </svg>
+                  크게 보기
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -149,6 +181,13 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
           )}
         </div>
       </div>
+      {/* 이미지 확대 모달 */}
+      {modalImageUrl && (
+        <ImageModal
+          src={modalImageUrl}
+          onClose={() => setModalImageUrl(null)}
+        />
+      )}
     </div>
   );
 }
