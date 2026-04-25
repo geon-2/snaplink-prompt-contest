@@ -268,6 +268,7 @@ def chat_completion(
             except Exception as exc:
                 worker_session.rollback()
                 try:
+                    error_detail = _format_exception_detail(exc)
                     _create_usage_ledger(
                         db_session=worker_session,
                         request_id=request_id,
@@ -288,6 +289,18 @@ def chat_completion(
                             total_cost_usd=_zero_cost(),
                         ),
                     )
+                    if "chat" in locals():
+                        _create_assistant_messages(
+                            db_session=worker_session,
+                            chat=chat,
+                            user_uuid=payload.uuid,
+                            response_parts=[
+                                AssistantResponsePart(
+                                    part_type="text",
+                                    text_content=f"⚠️ 서버 내부 오류가 발생했습니다. ({error_detail})"
+                                )
+                            ],
+                        )
                     worker_session.commit()
                 except Exception:
                     worker_session.rollback()

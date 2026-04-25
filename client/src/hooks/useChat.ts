@@ -42,8 +42,8 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
   const [isLoading, setIsLoading] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // 세대 카운터: 세션 전환 시 증가하여 이전 스트림의 콜백이 UI를 변경하지 않도록 함
-  const generationRef = useRef(0);
+  // 세대 카운터 제거: 대신 각 스트림이 자신의 Message 객체를 클로저와 activeStreams 맵으로 관리
+  const activeStreams = useRef<Map<string, Message>>(new Map());
 
   /**
    * 메시지 전송 — SSE 스트리밍 처리
@@ -53,12 +53,8 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
       if ((!prompt.trim() && (!files || files.length === 0)) || isLoading) return;
 
       const uuid = getUserUuid();
-      if (!uuid) {
-        console.error('User not authenticated');
-        return;
-      }
+      if (!uuid) return;
 
-      // 이전 요청 취소 (같은 세션 내에서 연속 전송 시)
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
@@ -66,11 +62,6 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      // 현재 세대를 캡처 — 콜백에서 세대가 변경되었으면 무시
-      const thisGeneration = generationRef.current;
-      const isStale = () => generationRef.current !== thisGeneration;
-
-      // 낙관적 UI: 사용자 메시지 즉시 추가 (ID는 서버 meta 이벤트로 업데이트)
       const tempUserMsgId = `temp-user-${Date.now()}`;
       const userMessage: Message = {
         id: tempUserMsgId,
@@ -81,7 +72,6 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
         attachedImages: files ? files.map(file => URL.createObjectURL(file)) : undefined,
       };
 
-      // AI 응답 플레이스홀더
       const tempAiMsgId = `temp-ai-${Date.now()}`;
       const aiMessage: Message = {
         id: tempAiMsgId,
@@ -97,122 +87,100 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
       setIsLoading(true);
 
       let resolvedAiMsgId = tempAiMsgId;
+      let activeMsg = aiMessage;
+      let streamChatId = chatId;
+
+      // 현재 진행 중인 메시지 상태를 업데이트하고, Global Map과 현재 UI(messages)에 동기화
+      const updateActiveMessage = (updater: (msg: Message) => Message) => {
+        activeMsg = updater(activeMsg);
+        if (streamChatId) {
+          activeStreams.current.set(streamChatId, activeMsg);
+        }
+        setMessages((prev) => 
+          prev.map((msg) => (msg.id === resolvedAiMsgId || msg.id === tempAiMsgId ? activeMsg : msg))
+        );
+      };
+
+      // 만약 기존 채팅방이면 바로 Map에 등록
+      if (streamChatId) {
+        activeStreams.current.set(streamChatId, activeMsg);
+      }
 
       try {
         await streamChatCompletion({
           uuid,
           chatId: chatId ?? undefined,
-          partnerChatId, // 파트너 ID 전달
+          partnerChatId,
           type,
           text: prompt,
           files,
           signal: controller.signal,
 
           onMeta: (data) => {
-            if (isStale()) return; // 세션 전환 후엔 무시
-
-            // 서버에서 실제 chat_id, message_id 수신
             const isNewChat = !chatId;
             setChatId(data.chat_id);
+            streamChatId = data.chat_id;
             resolvedAiMsgId = data.message_id;
+
+            activeMsg = { ...activeMsg, id: data.message_id };
+            activeStreams.current.set(streamChatId, activeMsg);
 
             if (isNewChat && onNewChatCreated) {
               onNewChatCreated(data.chat_id);
             }
 
-            // temp ID를 서버 ID로 교체
             setMessages((prev) =>
               prev.map((msg) => {
-                if (msg.id === tempUserMsgId) {
-                  return { ...msg, id: data.user_message_id };
-                }
-                if (msg.id === tempAiMsgId) {
-                  return { ...msg, id: data.message_id };
-                }
+                if (msg.id === tempUserMsgId) return { ...msg, id: data.user_message_id };
+                if (msg.id === tempAiMsgId) return activeMsg;
                 return msg;
               })
             );
           },
 
           onTextDelta: (data) => {
-            if (isStale()) return;
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === resolvedAiMsgId || msg.id === tempAiMsgId
-                  ? { ...msg, content: msg.content + data.delta }
-                  : msg
-              )
-            );
+            updateActiveMessage(msg => ({ ...msg, content: msg.content + data.delta }));
           },
 
           onImage: (data) => {
-            if (isStale()) return;
             let imageUrl: string | undefined;
             if (data.data) {
-              // base64 인라인 데이터가 있으면 data URL 사용
               imageUrl = `data:${data.mime_type ?? 'image/png'};base64,${data.data}`;
             } else if (data.s3_key) {
-              // s3_key만 있으면 CloudFront URL로 변환
               imageUrl = getImageUrl(data.s3_key);
             }
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === resolvedAiMsgId || msg.id === tempAiMsgId
-                  ? { ...msg, imageS3Key: data.s3_key, imageUrl, isGenerating: false }
-                  : msg
-              )
-            );
+            updateActiveMessage(msg => ({ ...msg, imageS3Key: data.s3_key, imageUrl, isGenerating: false }));
           },
 
           onDone: () => {
-            if (isStale()) return;
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === resolvedAiMsgId || msg.id === tempAiMsgId
-                  ? { ...msg, isStreaming: false, isGenerating: false }
-                  : msg
-              )
-            );
+            updateActiveMessage(msg => ({ ...msg, isStreaming: false, isGenerating: false }));
+            if (streamChatId) activeStreams.current.delete(streamChatId);
           },
 
           onError: (data) => {
-            if (isStale()) return;
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === resolvedAiMsgId || msg.id === tempAiMsgId
-                  ? {
-                      ...msg,
-                      content: `⚠️ ${data.message || '오류가 발생했습니다.'}`,
-                      isStreaming: false,
-                      isGenerating: false,
-                      isError: true,
-                    }
-                  : msg
-              )
-            );
+            updateActiveMessage(msg => ({
+              ...msg,
+              content: `⚠️ ${data.message || '오류가 발생했습니다.'}`,
+              isStreaming: false,
+              isGenerating: false,
+              isError: true,
+            }));
+            if (streamChatId) activeStreams.current.delete(streamChatId);
           },
         });
       } catch (error: unknown) {
         if (error instanceof Error && error.name === 'AbortError') return;
-        if (isStale()) return;
 
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === resolvedAiMsgId || msg.id === tempAiMsgId
-              ? {
-                  ...msg,
-                  content: '⚠️ 오류가 발생했습니다. 다시 시도해주세요.',
-                  isStreaming: false,
-                  isGenerating: false,
-                  isError: true,
-                }
-              : msg
-          )
-        );
+        updateActiveMessage(msg => ({
+          ...msg,
+          content: '⚠️ 오류가 발생했습니다. 다시 시도해주세요.',
+          isStreaming: false,
+          isGenerating: false,
+          isError: true,
+        }));
+        if (streamChatId) activeStreams.current.delete(streamChatId);
       } finally {
-        if (!isStale()) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
         abortControllerRef.current = null;
       }
     },
@@ -223,21 +191,26 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
    * 기존 채팅 로드 (세션 전환 시)
    *
    * 진행 중인 스트림을 중단하지 않는다.
-   * 세대 카운터를 증가시켜 이전 스트림 콜백이 UI에 영향을 주지 않게 한다.
-   * 서버에서 완료된 메시지를 불러온다.
+   * 백그라운드에 진행 중인 메시지가 있다면 messages 배열의 끝에 병합한다.
    */
   const loadChat = useCallback(async (targetChatId: string) => {
     const uuid = getUserUuid();
     if (!uuid) return;
 
-    // 세대 증가 → 이전 스트림 콜백 무효화 (스트림 자체는 유지)
-    generationRef.current++;
     setIsLoading(false);
 
     try {
       const detail = await fetchChatDetail(targetChatId, uuid);
       setChatId(targetChatId);
-      setMessages(detail.messages.map(apiMessageToUiMessage));
+      
+      const loadedMsgs = detail.messages.map(apiMessageToUiMessage);
+      
+      // 진행 중인 메시지가 있다면 뒷단에 추가
+      if (activeStreams.current.has(targetChatId)) {
+        loadedMsgs.push(activeStreams.current.get(targetChatId)!);
+      }
+      
+      setMessages(loadedMsgs);
     } catch (error) {
       console.error('Failed to load chat:', error);
     }
@@ -245,11 +218,8 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
 
   /**
    * 새 채팅으로 초기화 (새 세션 시작 시)
-   *
-   * 진행 중인 스트림을 중단하고 모든 상태를 초기화한다.
    */
   const clearMessages = useCallback(() => {
-    generationRef.current++; // 콜백 무효화
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -265,7 +235,6 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    generationRef.current++;
     setMessages((prev) => {
       const idx = prev.findIndex((m) => m.id === messageId);
       if (idx === -1) return prev;
