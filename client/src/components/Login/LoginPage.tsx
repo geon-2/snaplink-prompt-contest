@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { signup, getOrCreateLocalUuid } from '../../services/auth';
+import { signup, deriveUuidFromApiKey } from '../../services/auth';
 import logo from '../../assets/logo.svg';
 
 interface LoginPageProps {
@@ -21,7 +21,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setIsLoading(true);
     setError(null);
     try {
-      const uuid = getOrCreateLocalUuid();
+      const uuid = await deriveUuidFromApiKey(apiKey);
       await signup(uuid, apiKey);
       onLoginSuccess();
     } catch (err: any) {

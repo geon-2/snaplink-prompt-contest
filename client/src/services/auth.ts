@@ -67,23 +67,16 @@ export function logout(): void {
   document.cookie = 'user_api_key=; path=/; max-age=0; samesite=lax';
 }
 
-const UUID_KEY = 'pa_user_uuid';
-
 /**
- * localStorage에서 UUID를 가져오거나, 없으면 생성 후 저장한다.
+ * API Key에서 UUID v4를 결정론적으로 파생한다.
+ * 같은 Key → 항상 같은 UUID → DB와 항상 일치, 팀 공유 가능.
  */
-export function getOrCreateLocalUuid(): string {
-  const existing = localStorage.getItem(UUID_KEY);
-  if (existing) return existing;
-  const newUuid = crypto.randomUUID();
-  localStorage.setItem(UUID_KEY, newUuid);
-  return newUuid;
-}
-
-/**
- * localStorage의 UUID를 초기화한다.
- * 401 발생 시 새 UUID로 재등록할 수 있게 한다.
- */
-export function clearLocalUuid(): void {
-  localStorage.removeItem(UUID_KEY);
+export async function deriveUuidFromApiKey(apiKey: string): Promise<string> {
+  const data = new TextEncoder().encode(`pa_arena_${apiKey}`);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const bytes = new Uint8Array(hashBuffer).slice(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xx
+  const h = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }

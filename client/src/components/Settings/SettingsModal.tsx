@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getUserApiKey, getUserUuid, signup, logout } from '../../services/auth';
+import { getUserApiKey, signup, logout, deriveUuidFromApiKey } from '../../services/auth';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -25,8 +25,7 @@ export default function SettingsModal({ onClose, onLogout, onApiKeyUpdated }: Se
     setSaveError(null);
     setSaveSuccess(false);
     try {
-      const uuid = getUserUuid();
-      if (!uuid) throw new Error('사용자 정보를 찾을 수 없습니다.');
+      const uuid = await deriveUuidFromApiKey(newKey.trim());
       await signup(uuid, newKey.trim());
       setSaveSuccess(true);
       setNewKey('');

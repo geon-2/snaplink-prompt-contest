@@ -9,14 +9,8 @@ export function getImageUrl(s3Key: string): string {
     return s3Key;
   }
 
-  // vite.config.js의 define으로 빌드 시 주입됨
-  const bucket = process.env.S3_BUCKET as string | undefined;
-  const region = process.env.AWS_REGION as string | undefined;
-
-  if (bucket && region) {
-    return `https://${bucket}.s3.${region}.amazonaws.com/${s3Key}`;
-  }
-
-  // fallback: 백엔드 프록시를 통해 S3 이미지 제공
-  return `/api/images/${s3Key}`;
+  // 환경변수 우선, 없으면 서버 설정 기본값 사용
+  const bucket = (process.env.S3_BUCKET as string) || 'revede';
+  const region = (process.env.AWS_REGION as string) || 'ap-northeast-2';
+  return `https://${bucket}.s3.${region}.amazonaws.com/${s3Key}`;
 }
