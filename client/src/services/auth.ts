@@ -68,15 +68,19 @@ export function logout(): void {
 }
 
 /**
- * API Key에서 UUID v4를 결정론적으로 파생한다.
- * 같은 Key → 항상 같은 UUID → DB와 항상 일치, 팀 공유 가능.
+ * 브라우저별 고유 UUID를 반환한다.
+ * localStorage에 저장되어 있으면 그대로 사용하고,
+ * 없으면 새로 생성하여 저장한다.
+ *
+ * API Key는 팀 단위로 공유되지만 UUID는 개인 식별용이므로
+ * API Key와 무관하게 브라우저(사용자)마다 고유해야 한다.
  */
-export async function deriveUuidFromApiKey(apiKey: string): Promise<string> {
-  const data = new TextEncoder().encode(`pa_arena_${apiKey}`);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const bytes = new Uint8Array(hashBuffer).slice(0, 16);
-  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
-  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xx
-  const h = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+export function getOrCreateUserUuid(): string {
+  const STORAGE_KEY = 'pa_user_uuid';
+  const existing = localStorage.getItem(STORAGE_KEY);
+  if (existing) return existing;
+
+  const uuid = crypto.randomUUID();
+  localStorage.setItem(STORAGE_KEY, uuid);
+  return uuid;
 }
