@@ -32,7 +32,13 @@ export async function signup(uuid: string, apiKey: string): Promise<void> {
  */
 export function getUserUuid(): string | null {
   const match = document.cookie.match(/(?:^|;\s*)user_uuid=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    document.cookie = 'user_uuid=; path=/; max-age=0; samesite=lax';
+    return null;
+  }
 }
 
 /**
@@ -40,7 +46,13 @@ export function getUserUuid(): string | null {
  */
 export function getUserApiKey(): string | null {
   const match = document.cookie.match(/(?:^|;\s*)user_api_key=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    document.cookie = 'user_api_key=; path=/; max-age=0; samesite=lax';
+    return null;
+  }
 }
 
 /**
@@ -66,4 +78,12 @@ export function getOrCreateLocalUuid(): string {
   const newUuid = crypto.randomUUID();
   localStorage.setItem(UUID_KEY, newUuid);
   return newUuid;
+}
+
+/**
+ * localStorage의 UUID를 초기화한다.
+ * 401 발생 시 새 UUID로 재등록할 수 있게 한다.
+ */
+export function clearLocalUuid(): void {
+  localStorage.removeItem(UUID_KEY);
 }

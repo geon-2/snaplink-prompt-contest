@@ -5,7 +5,7 @@ import LoginPage from './components/Login/LoginPage';
 import SettingsModal from './components/Settings/SettingsModal';
 import { useChat } from './hooks/useChat';
 import { fetchChats, fetchUsage, UnauthorizedError } from './services/api';
-import { getUserUuid, isAuthenticated, logout } from './services/auth';
+import { getUserUuid, isAuthenticated, logout, clearLocalUuid } from './services/auth';
 import type { ChatListItem, UsageInfo } from './types';
 
 function sortByRecent(items: ChatListItem[]): ChatListItem[] {
@@ -54,7 +54,8 @@ export default function App() {
           }
         }
       } catch (error) {
-        if (error instanceof UnauthorizedError) {
+        if (error instanceof UnauthorizedError || error instanceof URIError) {
+          clearLocalUuid();
           logout();
           setIsLoggedIn(false);
         } else {
@@ -85,10 +86,19 @@ export default function App() {
     setIsLoggedIn(true);
     const uuid = getUserUuid();
     if (uuid) {
-      const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-      setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
-      setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
-      setUsage(usageData);
+      try {
+        const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
+        setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
+        setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
+        setUsage(usageData);
+      } catch (err) {
+        if (err instanceof UnauthorizedError) {
+          // 이 UUID가 다른 API Key로 등록돼 있음 → UUID 초기화 후 재로그인
+          clearLocalUuid();
+          logout();
+          setIsLoggedIn(false);
+        }
+      }
     }
   }, []);
 
