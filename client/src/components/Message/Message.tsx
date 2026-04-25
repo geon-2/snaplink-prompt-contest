@@ -53,79 +53,82 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
 
       {/* Content Wrapper */}
       <div className={`max-w-[80%] relative min-w-0 flex flex-col group`}>
-        <div className={`relative px-5 py-4 rounded-3xl ${isUser ? 'bg-accent-pro text-white font-bold rounded-tr-sm shadow-lg shadow-accent-pro/10' : 'bg-white border border-border-default rounded-tl-sm text-text-primary shadow-sm'} ${isError ? 'border-red-200 bg-red-50 text-red-500' : ''}`}>
-          
-          {/* 사용자가 첨부한 이미지들 (텍스트 위) */}
-          {isUser && attachedImages && attachedImages.length > 0 && (
-            <div className={`flex flex-wrap gap-2 mb-3 ${content ? '' : 'mb-0'}`}>
-              {attachedImages.map((img: string, i: number) => (
-                !failedImages.has(i) && (
-                  <div key={i} className="rounded-xl overflow-hidden border-2 border-white/20 shadow-md">
-                    <img
-                      src={img}
-                      alt="첨부 이미지"
-                      className="max-w-[220px] max-h-[220px] object-cover"
-                      onError={() => setFailedImages(prev => new Set(prev).add(i))}
-                    />
-                  </div>
-                )
-              ))}
-            </div>
-          )}
-
-          {/* 텍스트 스트리밍 중 */}
-          {isStreaming && !content && (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-[6px] py-1.5 px-1">
-                <div className="w-2 h-2 rounded-full bg-accent-pro/40 animate-pulse" />
-                <div className="w-2 h-2 rounded-full bg-accent-pro/30 animate-pulse delay-75" />
-                <div className="w-2 h-2 rounded-full bg-accent-pro/20 animate-pulse delay-150" />
+        {/* 텍스트 또는 텍스트 생성/스트리밍 상태가 있을 때만 거품 영역 표시 */}
+        {(content || isStreaming || isGenerating || (isUser && attachedImages?.length > 0)) && (
+          <div className={`relative px-5 py-4 rounded-3xl ${isUser ? 'bg-accent-pro text-white font-bold rounded-tr-sm shadow-lg shadow-accent-pro/10' : 'bg-white border border-border-default rounded-tl-sm text-text-primary shadow-sm'} ${isError ? 'border-red-200 bg-red-50 text-red-500' : ''}`}>
+            
+            {/* 사용자가 첨부한 이미지들 (텍스트 위) */}
+            {isUser && attachedImages && attachedImages.length > 0 && (
+              <div className={`flex flex-wrap gap-2 mb-3 ${content ? '' : 'mb-0'}`}>
+                {attachedImages.map((img: string, i: number) => (
+                  !failedImages.has(i) && (
+                    <div key={i} className="rounded-xl overflow-hidden border-2 border-white/20 shadow-md">
+                      <img
+                        src={img}
+                        alt="첨부 이미지"
+                        className="max-w-[220px] max-h-[220px] object-cover"
+                        onError={() => setFailedImages(prev => new Set(prev).add(i))}
+                      />
+                    </div>
+                  )
+                ))}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* 이미지 생성 중 (AI) */}
-          {!isUser && isGenerating && (
-            <div className="flex items-center justify-center py-10 px-8">
-              <div className="relative w-12 h-12">
-                <div className="w-12 h-12 border-4 border-accent-flash border-t-transparent rounded-full animate-spin" />
-                <div className="absolute inset-0 flex items-center justify-center text-lg">🎨</div>
+            {/* 텍스트 스트리밍 중 */}
+            {isStreaming && !content && (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-[6px] py-1.5 px-1">
+                  <div className="w-2 h-2 rounded-full bg-accent-pro/40 animate-pulse" />
+                  <div className="w-2 h-2 rounded-full bg-accent-pro/30 animate-pulse delay-75" />
+                  <div className="w-2 h-2 rounded-full bg-accent-pro/20 animate-pulse delay-150" />
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* 실제 텍스트 컨텐츠 */}
-          {content && (
-            <div className={`break-words whitespace-normal text-[14.5px] leading-relaxed markdown-body ${isUser ? 'text-white' : 'text-text-primary'}`}>
-              <ReactMarkdown 
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  strong: ({node, ...props}) => <strong className="font-extrabold" {...props} />,
-                  code: ({node, inline, className, children, ...props}: any) => {
-                    const match = /language-(\w+)/.exec(className || '');
-                    return !inline && match ? (
-                      <pre className="bg-slate-50 border border-border-default rounded-xl p-4 my-3 overflow-x-auto font-mono text-[13px] leading-relaxed shadow-inner">
-                        <code className={className} {...props}>
+            {/* 이미지 생성 중 (AI) */}
+            {!isUser && isGenerating && (
+              <div className="flex items-center justify-center py-10 px-8">
+                <div className="relative w-12 h-12">
+                  <div className="w-12 h-12 border-4 border-accent-flash border-t-transparent rounded-full animate-spin" />
+                  <div className="absolute inset-0 flex items-center justify-center text-lg">🎨</div>
+                </div>
+              </div>
+            )}
+
+            {/* 실제 텍스트 컨텐츠 */}
+            {content && (
+              <div className={`break-words whitespace-normal text-[14.5px] leading-relaxed markdown-body ${isUser ? 'text-white' : 'text-text-primary'}`}>
+                <ReactMarkdown 
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    strong: ({node, ...props}) => <strong className="font-extrabold" {...props} />,
+                    code: ({node, inline, className, children, ...props}: any) => {
+                      const match = /language-(\w+)/.exec(className || '');
+                      return !inline && match ? (
+                        <pre className="bg-slate-50 border border-border-default rounded-xl p-4 my-3 overflow-x-auto font-mono text-[13px] leading-relaxed shadow-inner">
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        </pre>
+                      ) : (
+                        <code className="font-mono bg-slate-100 border border-slate-200 px-[6px] py-[2px] rounded-[4px] text-[0.85em] text-accent-pro" {...props}>
                           {children}
                         </code>
-                      </pre>
-                    ) : (
-                      <code className="font-mono bg-slate-100 border border-slate-200 px-[6px] py-[2px] rounded-[4px] text-[0.85em] text-accent-pro" {...props}>
-                        {children}
-                      </code>
-                    );
-                  },
-                  h2: ({node, ...props}) => <strong className="text-[17px] font-black block mt-6 mb-2" {...props} />,
-                  blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-accent-pro/30 bg-accent-pro/[0.03] pl-4 py-2 my-4 font-medium italic opacity-80" {...props} />,
-                  p: ({node, ...props}) => <p className="mb-2 last:mb-0 whitespace-pre-wrap" {...props} />,
-                }}
-              >
-                {content}
-              </ReactMarkdown>
-              {isStreaming && content && <span className="inline-block w-[2.5px] h-[1.1em] bg-accent-pro ml-1 align-middle animate-pulse" />}
-            </div>
-          )}
-        </div>
+                      );
+                    },
+                    h2: ({node, ...props}) => <strong className="text-[17px] font-black block mt-6 mb-2" {...props} />,
+                    blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-accent-pro/30 bg-accent-pro/[0.03] pl-4 py-2 my-4 font-medium italic opacity-80" {...props} />,
+                    p: ({node, ...props}) => <p className="mb-2 last:mb-0 whitespace-pre-wrap" {...props} />,
+                  }}
+                >
+                  {content}
+                </ReactMarkdown>
+                {isStreaming && content && <span className="inline-block w-[2.5px] h-[1.1em] bg-accent-pro ml-1 align-middle animate-pulse" />}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* AI가 생성한 이미지 — 클릭 시 모달 확대 */}
         {!isUser && aiImageUrl && !isGenerating && (
