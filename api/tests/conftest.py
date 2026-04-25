@@ -52,6 +52,9 @@ class FakeStorageService:
     def download_object(self, key: str) -> tuple[bytes, str | None]:
         return self.objects[key]
 
+    def generate_presigned_url(self, key: str, expires_in: int = 3600) -> str:
+        return f"https://example.test/{key}?expires_in={expires_in}"
+
 
 class FakeGeminiService:
     def __init__(self) -> None:
@@ -82,6 +85,16 @@ class FakeGeminiService:
     ) -> Iterator[GeminiTextEvent | GeminiImageEvent | GeminiUsageEvent]:
         self.last_payload = payload
         yield from self.next_events
+
+    def generate_content(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        payload: dict[str, object],
+    ) -> list[GeminiTextEvent | GeminiImageEvent | GeminiUsageEvent]:
+        self.last_payload = payload
+        return list(self.next_events)
 
 
 @pytest.fixture()

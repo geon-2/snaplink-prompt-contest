@@ -10,12 +10,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from queue import Queue
+from threading import Thread
 from uuid import UUID, uuid4
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.auth import authenticate_session_from_cookies, authenticate_user_request
 from app.core.config import Settings, get_settings
@@ -66,6 +69,13 @@ class UploadedInputImage:
 
 
 @dataclass(slots=True)
+class PendingUpload:
+    temp_path: Path
+    filename: str | None
+    mime_type: str
+
+
+@dataclass(slots=True)
 class GeneratedAssistantImage:
     message_id: UUID
     s3_key: str
@@ -91,164 +101,185 @@ def chat_completion(
         requested_uuid=payload.uuid,
         db_session=db_session,
     )
-    api_key_hash = hash_api_key(user.api_key)
-    chat = _get_or_create_chat(db_session=db_session, user_uuid=payload.uuid, chat_id=payload.chat_id)
-    request_id = uuid4()
-
-    user_message = _create_user_message(
-        db_session=db_session,
-        storage_service=storage_service,
-        settings=settings,
-        uploads=uploads,
-        user_api_key=user.api_key,
-        user_uuid=payload.uuid,
-        chat=chat,
-        message_type=payload.type.value,
-        text_content=normalized_text,
+    pending_uploads = _persist_uploads(uploads=uploads, temp_upload_dir=settings.temp_upload_dir)
+    worker_session_factory = sessionmaker(
+        bind=db_session.get_bind(),
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False,
     )
+    event_queue: Queue[str | None] = Queue()
 
-    try:
-        contents = _build_gemini_contents(
-            db_session=db_session,
-            chat_id=chat.chat_id,
-            user_api_key=user.api_key,
-            settings=settings,
-            gemini_service=gemini_service,
-            storage_service=storage_service,
-            inline_images=payload.type is ChatCompletionType.IMAGE,
-        )
-    except Exception:
-        db_session.rollback()
-        raise
-
-    response_payload = {"contents": contents}
-    model_name = gemini_service.model
-    if payload.type is ChatCompletionType.IMAGE:
-        model_name = gemini_service.image_model
-        response_payload["generationConfig"] = {"responseModalities": ["TEXT", "IMAGE"]}
-
-    def stream_events() -> object:
-        yield _sse_event(
-            "meta",
-            {
-                "chat_id": str(chat.chat_id),
-                "user_message_id": str(user_message.message_id),
-            },
-        )
-
-        assistant_text_chunks: list[str] = []
-        assistant_images: list[GeneratedAssistantImage] = []
-        usage_metadata = GeminiUsageMetadata()
-        gemini_events = (
-            gemini_service.generate_content(
-                api_key=user.api_key,
-                model=model_name,
-                payload=response_payload,
-            )
-            if payload.type is ChatCompletionType.IMAGE
-            else gemini_service.stream_generate_content(
-                api_key=user.api_key,
-                model=model_name,
-                payload=response_payload,
-            )
-        )
-
-        try:
-            for event in gemini_events:
-                if isinstance(event, GeminiUsageEvent):
-                    usage_metadata = event.metadata
-                    continue
-                if isinstance(event, GeminiTextEvent):
-                    assistant_text_chunks.append(event.text)
-                    yield _sse_event("text_delta", {"text": event.text})
-                    continue
-
-                image_message_id = uuid4()
-                image_key = _build_output_s3_key(
+    def process_request() -> None:
+        api_key_hash = hash_api_key(user.api_key)
+        request_id = uuid4()
+        model_name = gemini_service.image_model if payload.type is ChatCompletionType.IMAGE else gemini_service.model
+        with worker_session_factory() as worker_session:
+            try:
+                chat = _get_or_create_chat(db_session=worker_session, user_uuid=payload.uuid, chat_id=payload.chat_id)
+                user_message = _create_user_message(
+                    db_session=worker_session,
+                    storage_service=storage_service,
                     settings=settings,
+                    uploads=pending_uploads,
                     user_api_key=user.api_key,
-                    chat_id=chat.chat_id,
-                    message_id=image_message_id,
-                    index=len(assistant_images),
-                    mime_type=event.mime_type,
+                    user_uuid=payload.uuid,
+                    chat=chat,
+                    message_type=payload.type.value,
+                    text_content=normalized_text,
                 )
-                storage_service.upload_bytes(event.data, image_key, event.mime_type)
-                assistant_images.append(
-                    GeneratedAssistantImage(
-                        message_id=image_message_id,
-                        s3_key=image_key,
-                        mime_type=event.mime_type,
+                event_queue.put(
+                    _sse_event(
+                        "meta",
+                        {
+                            "chat_id": str(chat.chat_id),
+                            "user_message_id": str(user_message.message_id),
+                        },
                     )
                 )
-                yield _sse_event("image", {"s3_key": image_key})
+                contents = _build_gemini_contents(
+                    db_session=worker_session,
+                    chat_id=chat.chat_id,
+                    user_api_key=user.api_key,
+                    settings=settings,
+                    gemini_service=gemini_service,
+                    storage_service=storage_service,
+                    inline_images=payload.type is ChatCompletionType.IMAGE,
+                )
+                response_payload = {"contents": contents}
+                if payload.type is ChatCompletionType.IMAGE:
+                    response_payload["generationConfig"] = {"responseModalities": ["TEXT", "IMAGE"]}
 
-            _create_assistant_messages(
-                db_session=db_session,
-                chat=chat,
-                user_uuid=payload.uuid,
-                text_content="".join(assistant_text_chunks).strip() or None,
-                generated_images=assistant_images,
-            )
-            cost_breakdown = calculate_usage_cost(
-                request_type=payload.type.value,
-                prompt_tokens=usage_metadata.prompt_token_count,
-                candidate_tokens=usage_metadata.candidates_token_count,
-                generated_image_count=len(assistant_images),
-                image_size=payload.image_size.value,
-            )
-            _create_usage_ledger(
-                db_session=db_session,
-                request_id=request_id,
-                chat_id=chat.chat_id,
-                user_uuid=payload.uuid,
-                api_key_hash=api_key_hash,
-                model=model_name,
-                request_type=payload.type.value,
-                status="success",
-                image_size=payload.image_size if payload.type is ChatCompletionType.IMAGE else None,
-                cost_breakdown=cost_breakdown,
-            )
-            db_session.flush()
-            usage_snapshot = build_usage_snapshot(
-                used_usd=get_ledger_usage_total(db_session=db_session, api_key_hash=api_key_hash),
-                usage_limit_usd=Decimal(str(settings.usage_limit_usd)),
-            )
-            db_session.commit()
-            yield _sse_event(
-                "done",
-                {
-                    "chat_id": str(chat.chat_id),
-                    "cost_usd": str(cost_breakdown.total_cost_usd),
-                    "used_usd": str(usage_snapshot.used_usd),
-                    "remaining_usd": str(usage_snapshot.remaining_usd),
-                    "limit_usd": str(usage_snapshot.limit_usd),
-                    "quota_exceeded": usage_snapshot.quota_exceeded,
-                },
-            )
-        except Exception as exc:
-            db_session.rollback()
-            _create_usage_ledger(
-                db_session=db_session,
-                request_id=request_id,
-                chat_id=chat.chat_id,
-                user_uuid=payload.uuid,
-                api_key_hash=api_key_hash,
-                model=model_name,
-                request_type=payload.type.value,
-                status="failed",
-                image_size=payload.image_size if payload.type is ChatCompletionType.IMAGE else None,
-                cost_breakdown=UsageCostBreakdown(
+                assistant_text_chunks: list[str] = []
+                assistant_images: list[GeneratedAssistantImage] = []
+                usage_metadata = GeminiUsageMetadata()
+                gemini_events = (
+                    gemini_service.generate_content(
+                        api_key=user.api_key,
+                        model=model_name,
+                        payload=response_payload,
+                    )
+                    if payload.type is ChatCompletionType.IMAGE
+                    else gemini_service.stream_generate_content(
+                        api_key=user.api_key,
+                        model=model_name,
+                        payload=response_payload,
+                    )
+                )
+
+                for event in gemini_events:
+                    if isinstance(event, GeminiUsageEvent):
+                        usage_metadata = event.metadata
+                        continue
+                    if isinstance(event, GeminiTextEvent):
+                        assistant_text_chunks.append(event.text)
+                        event_queue.put(_sse_event("text_delta", {"text": event.text}))
+                        continue
+
+                    image_message_id = uuid4()
+                    image_key = _build_output_s3_key(
+                        settings=settings,
+                        user_api_key=user.api_key,
+                        chat_id=chat.chat_id,
+                        message_id=image_message_id,
+                        index=len(assistant_images),
+                        mime_type=event.mime_type,
+                    )
+                    storage_service.upload_bytes(event.data, image_key, event.mime_type)
+                    assistant_images.append(
+                        GeneratedAssistantImage(
+                            message_id=image_message_id,
+                            s3_key=image_key,
+                            mime_type=event.mime_type,
+                        )
+                    )
+                    event_queue.put(_sse_event("image", {"s3_key": image_key}))
+
+                _create_assistant_messages(
+                    db_session=worker_session,
+                    chat=chat,
+                    user_uuid=payload.uuid,
+                    text_content="".join(assistant_text_chunks).strip() or None,
+                    generated_images=assistant_images,
+                )
+                cost_breakdown = calculate_usage_cost(
+                    request_type=payload.type.value,
                     prompt_tokens=usage_metadata.prompt_token_count,
                     candidate_tokens=usage_metadata.candidates_token_count,
                     generated_image_count=len(assistant_images),
-                    input_cost_usd=_zero_cost(),
-                    output_cost_usd=_zero_cost(),
-                    image_cost_usd=_zero_cost(),
-                    total_cost_usd=_zero_cost(),
-                ),
-            )
-            db_session.commit()
-            yield _sse_event("error", {"detail": str(exc)})
+                    image_size=payload.image_size.value,
+                )
+                _create_usage_ledger(
+                    db_session=worker_session,
+                    request_id=request_id,
+                    chat_id=chat.chat_id,
+                    user_uuid=payload.uuid,
+                    api_key_hash=api_key_hash,
+                    model=model_name,
+                    request_type=payload.type.value,
+                    status="success",
+                    image_size=payload.image_size if payload.type is ChatCompletionType.IMAGE else None,
+                    cost_breakdown=cost_breakdown,
+                )
+                worker_session.flush()
+                usage_snapshot = build_usage_snapshot(
+                    used_usd=get_ledger_usage_total(db_session=worker_session, api_key_hash=api_key_hash),
+                    usage_limit_usd=Decimal(str(settings.usage_limit_usd)),
+                )
+                worker_session.commit()
+                event_queue.put(
+                    _sse_event(
+                        "done",
+                        {
+                            "chat_id": str(chat.chat_id),
+                            "cost_usd": str(cost_breakdown.total_cost_usd),
+                            "used_usd": str(usage_snapshot.used_usd),
+                            "remaining_usd": str(usage_snapshot.remaining_usd),
+                            "limit_usd": str(usage_snapshot.limit_usd),
+                            "quota_exceeded": usage_snapshot.quota_exceeded,
+                        },
+                    )
+                )
+            except Exception as exc:
+                worker_session.rollback()
+                try:
+                    _create_usage_ledger(
+                        db_session=worker_session,
+                        request_id=request_id,
+                        chat_id=chat.chat_id if "chat" in locals() else payload.chat_id or uuid4(),
+                        user_uuid=payload.uuid,
+                        api_key_hash=api_key_hash,
+                        model=model_name,
+                        request_type=payload.type.value,
+                        status="failed",
+                        image_size=payload.image_size if payload.type is ChatCompletionType.IMAGE else None,
+                        cost_breakdown=UsageCostBreakdown(
+                            prompt_tokens=usage_metadata.prompt_token_count if "usage_metadata" in locals() else 0,
+                            candidate_tokens=usage_metadata.candidates_token_count if "usage_metadata" in locals() else 0,
+                            generated_image_count=len(assistant_images) if "assistant_images" in locals() else 0,
+                            input_cost_usd=_zero_cost(),
+                            output_cost_usd=_zero_cost(),
+                            image_cost_usd=_zero_cost(),
+                            total_cost_usd=_zero_cost(),
+                        ),
+                    )
+                    worker_session.commit()
+                except Exception:
+                    worker_session.rollback()
+                event_queue.put(_sse_event("error", {"detail": _format_exception_detail(exc)}))
+            finally:
+                _cleanup_pending_uploads(pending_uploads)
+                event_queue.put(None)
+
+    worker = Thread(target=process_request, name=f"chat-completion-{uuid4()}")
+    worker.start()
+
+    def stream_events() -> object:
+        while True:
+            event = event_queue.get()
+            if event is None:
+                break
+            yield event
 
     return StreamingResponse(
         stream_events(),
@@ -441,7 +472,7 @@ def _create_user_message(
     db_session: Session,
     storage_service: S3StorageService,
     settings: Settings,
-    uploads: list[UploadFile],
+    uploads: list[PendingUpload],
     user_api_key: str,
     user_uuid: UUID,
     chat: Chat,
@@ -453,8 +484,6 @@ def _create_user_message(
     uploaded_images: list[UploadedInputImage] = []
 
     for index, upload in enumerate(uploads):
-        temp_path = _write_upload_to_temp(upload, settings.temp_upload_dir)
-        mime_type = upload.content_type or "application/octet-stream"
         key = _build_input_s3_key(
             settings=settings,
             user_api_key=user_api_key,
@@ -464,10 +493,10 @@ def _create_user_message(
             filename=upload.filename,
         )
         try:
-            storage_service.upload_file(temp_path, key, mime_type)
+            storage_service.upload_file(upload.temp_path, key, upload.mime_type)
         finally:
-            _remove_temp_file(temp_path)
-        uploaded_images.append(UploadedInputImage(s3_key=key, mime_type=mime_type))
+            _remove_temp_file(upload.temp_path)
+        uploaded_images.append(UploadedInputImage(s3_key=key, mime_type=upload.mime_type))
 
     message = Message(
         message_id=message_id,
@@ -561,8 +590,8 @@ def _build_gemini_contents(
             if inline_images:
                 current_parts.append(
                     {
-                        "inline_data": {
-                            "mime_type": resolved_mime_type,
+                        "inlineData": {
+                            "mimeType": resolved_mime_type,
                             "data": base64.b64encode(file_bytes).decode("utf-8"),
                         }
                     }
@@ -801,6 +830,28 @@ def _write_upload_to_temp(upload: UploadFile, temp_upload_dir: Path) -> Path:
         return Path(temp_file.name)
 
 
+def _persist_uploads(*, uploads: list[UploadFile], temp_upload_dir: Path) -> list[PendingUpload]:
+    persisted_uploads: list[PendingUpload] = []
+    try:
+        for upload in uploads:
+            persisted_uploads.append(
+                PendingUpload(
+                    temp_path=_write_upload_to_temp(upload, temp_upload_dir),
+                    filename=upload.filename,
+                    mime_type=upload.content_type or "application/octet-stream",
+                )
+            )
+    except Exception:
+        _cleanup_pending_uploads(persisted_uploads)
+        raise
+    return persisted_uploads
+
+
+def _cleanup_pending_uploads(uploads: list[PendingUpload]) -> None:
+    for upload in uploads:
+        _remove_temp_file(upload.temp_path)
+
+
 def _write_bytes_to_temp(*, data: bytes, temp_upload_dir: Path, suffix: str) -> Path:
     temp_upload_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(delete=False, dir=temp_upload_dir, suffix=suffix) as temp_file:
@@ -824,3 +875,11 @@ def _zero_cost():
     from decimal import Decimal
 
     return Decimal("0")
+
+
+def _format_exception_detail(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        response_text = exc.response.text.strip()
+        if response_text:
+            return f"{exc}. Response: {response_text}"
+    return str(exc)

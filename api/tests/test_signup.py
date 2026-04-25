@@ -168,7 +168,7 @@ def test_image_completion_uploads_to_storage_and_returns_s3_keys(
     assert any(key.startswith("tests/user-api-key/chats/") and "/output/" in key for key in stored_keys)
     assert fake_gemini_service.last_payload is not None
     parts = fake_gemini_service.last_payload["contents"][0]["parts"]
-    assert any("fileData" in part for part in parts)
+    assert any("inlineData" in part for part in parts)
 
 
 def test_generated_images_api_returns_paginated_user_gallery(
