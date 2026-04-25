@@ -5,7 +5,7 @@ import { getImageUrl } from '../../utils/s3';
  * 단일 채팅 메시지 컴포넌트
  */
 export default function Message({ message, variant = 'pro', onCopy }: any) {
-  const { role, content, timestamp, isStreaming, isGenerating, imageS3Key, isError, attachedImages } = message;
+  const { role, content, timestamp, isStreaming, isGenerating, imageS3Key, imageUrl: imageDataUrl, isError, attachedImages } = message;
   const isUser = role === 'user';
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -42,8 +42,8 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
     return <span dangerouslySetInnerHTML={{ __html: html }} className="break-words whitespace-pre-wrap leading-[1.7]" />;
   };
 
-  // S3 key → URL 변환 (AI 생성 이미지용)
-  const aiImageUrl = imageS3Key ? getImageUrl(imageS3Key) : null;
+  // imageDataUrl(base64) 우선, 없으면 S3 key → URL 변환
+  const aiImageUrl = imageDataUrl ?? (imageS3Key ? getImageUrl(imageS3Key) : null);
 
   return (
     <div

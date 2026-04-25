@@ -125,10 +125,13 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
           },
 
           onImage: (data) => {
+            const imageUrl = data.data
+              ? `data:${data.mime_type ?? 'image/png'};base64,${data.data}`
+              : undefined;
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === resolvedAiMsgId || msg.id === tempAiMsgId
-                  ? { ...msg, imageS3Key: data.s3_key, isGenerating: false }
+                  ? { ...msg, imageS3Key: data.s3_key, imageUrl, isGenerating: false }
                   : msg
               )
             );

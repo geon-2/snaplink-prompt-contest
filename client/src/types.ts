@@ -20,6 +20,8 @@ export interface SSETextDeltaEvent {
 
 export interface SSEImageEvent {
   s3_key: string;
+  data?: string;
+  mime_type?: string;
 }
 
 export interface SSEErrorEvent {
@@ -75,6 +77,7 @@ export interface Message {
   isStreaming?: boolean;
   isGenerating?: boolean;
   imageS3Key?: string;
+  imageUrl?: string;   // base64 data URL (신규 생성) or 직접 URL
   attachedImages?: string[];
   isError?: boolean;
 }

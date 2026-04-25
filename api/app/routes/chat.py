@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import mimetypes
 import re
@@ -169,7 +170,11 @@ def chat_completion(
                         mime_type=event.mime_type,
                     )
                 )
-                yield _sse_event("image", {"s3_key": image_key})
+                yield _sse_event("image", {
+                    "s3_key": image_key,
+                    "data": base64.b64encode(event.data).decode(),
+                    "mime_type": event.mime_type,
+                })
 
             _create_assistant_messages(
                 db_session=db_session,
