@@ -2,6 +2,7 @@ import { useEffect, useCallback, useState } from 'react';
 
 interface ImageModalProps {
   src: string;
+  s3Key?: string;
   alt?: string;
   onClose: () => void;
 }
@@ -13,7 +14,7 @@ interface ImageModalProps {
  * - 다운로드 버튼으로 이미지 저장
  * - 부드러운 fade/scale 애니메이션
  */
-export default function ImageModal({ src, alt = '생성된 이미지', onClose }: ImageModalProps) {
+export default function ImageModal({ src, s3Key, alt = '생성된 이미지', onClose }: ImageModalProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -41,21 +42,43 @@ export default function ImageModal({ src, alt = '생성된 이미지', onClose }
     setTimeout(onClose, 200); // 애니메이션 시간 후 실제 닫기
   }, [onClose]);
 
+  /**
+   * 이미지 다운로드
+   *
+   * 1) data: URL → 직접 fetch로 blob 변환
+   * 2) s3Key → same-origin 서버 프록시(/api/images/)로 CORS 없이 다운로드
+   * 3) fallback → 원본 URL fetch 시도
+   */
   const handleDownload = useCallback(async () => {
     setIsDownloading(true);
-    try {
-      const response = await fetch(src, { mode: 'cors' });
-      const blob = await response.blob();
 
-      // MIME 타입으로 확장자 결정
-      const mimeToExt: Record<string, string> = {
-        'image/png': 'png',
-        'image/jpeg': 'jpg',
-        'image/webp': 'webp',
-        'image/gif': 'gif',
-      };
+    const mimeToExt: Record<string, string> = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+    };
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+    try {
+      let blob: Blob;
+
+      if (src.startsWith('data:')) {
+        // data: URL은 직접 fetch 가능
+        const res = await fetch(src);
+        blob = await res.blob();
+      } else if (s3Key) {
+        // same-origin 프록시를 통해 CORS 없이 다운로드
+        const res = await fetch(`/api/images/${s3Key}`, { credentials: 'include' });
+        if (!res.ok) throw new Error('proxy fetch failed');
+        blob = await res.blob();
+      } else {
+        // 원본 URL 직접 fetch
+        const res = await fetch(src, { mode: 'cors' });
+        blob = await res.blob();
+      }
+
       const ext = mimeToExt[blob.type] || 'png';
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const filename = `generated-image-${timestamp}.${ext}`;
 
       const url = URL.createObjectURL(blob);
@@ -66,20 +89,13 @@ export default function ImageModal({ src, alt = '생성된 이미지', onClose }
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch (err) {
-      // fetch 실패 시 직접 링크로 fallback
-      const a = document.createElement('a');
-      a.href = src;
-      a.download = 'generated-image.png';
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+    } catch {
+      // 모든 fetch 실패 시 → 새 탭에서 열기 (최후 fallback)
+      window.open(src, '_blank', 'noopener,noreferrer');
     } finally {
       setIsDownloading(false);
     }
-  }, [src]);
+  }, [src, s3Key]);
 
   return (
     <div

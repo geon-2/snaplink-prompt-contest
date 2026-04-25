@@ -185,6 +185,7 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
       {modalImageUrl && (
         <ImageModal
           src={modalImageUrl}
+          s3Key={imageS3Key}
           onClose={() => setModalImageUrl(null)}
         />
       )}
