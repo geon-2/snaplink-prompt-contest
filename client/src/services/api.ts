@@ -24,6 +24,17 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
   if (text) formData.append('text', text);
   if (files?.length) files.forEach((f) => formData.append('files', f));
 
+  // 디버깅용: 요청 규격 출력
+  const debugPayload: Record<string, unknown> = {};
+  formData.forEach((value, key) => {
+    if (value instanceof File) {
+      debugPayload[key] = `[File] ${value.name} (${value.type}, ${value.size} bytes)`;
+    } else {
+      debugPayload[key] = value;
+    }
+  });
+  console.log('[API] POST /chat/completion', debugPayload);
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE}/chat/completion`, {
@@ -33,12 +44,14 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
       signal,
     });
   } catch (err) {
+    console.error('[API] 연결 실패', err);
     onError({ message: '서버에 연결할 수 없습니다.' });
     return;
   }
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
+    console.error(`[API] 응답 에러 ${response.status}`, body);
     onError({ message: body.detail || `서버 오류 (${response.status})` });
     return;
   }
