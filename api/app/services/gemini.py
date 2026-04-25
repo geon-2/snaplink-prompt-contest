@@ -21,12 +21,14 @@ class GeminiUploadedFile:
 @dataclass(slots=True)
 class GeminiTextEvent:
     text: str
+    thought_signature: str | None = None
 
 
 @dataclass(slots=True)
 class GeminiImageEvent:
     data: bytes
     mime_type: str
+    thought_signature: str | None = None
 
 
 @dataclass(slots=True)
@@ -185,9 +187,13 @@ class GeminiService:
                 if not isinstance(part, dict):
                     continue
 
+                thought_signature = part.get("thoughtSignature")
+                resolved_thought_signature = (
+                    thought_signature if isinstance(thought_signature, str) and thought_signature else None
+                )
                 text = part.get("text")
-                if isinstance(text, str) and text:
-                    yield GeminiTextEvent(text=text)
+                if isinstance(text, str) and (text or resolved_thought_signature):
+                    yield GeminiTextEvent(text=text, thought_signature=resolved_thought_signature)
 
                 inline_data = part.get("inlineData")
                 if not isinstance(inline_data, dict):
@@ -202,6 +208,7 @@ class GeminiService:
                 yield GeminiImageEvent(
                     data=base64.b64decode(data),
                     mime_type=resolved_mime_type,
+                    thought_signature=resolved_thought_signature,
                 )
 
 

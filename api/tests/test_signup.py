@@ -171,6 +171,58 @@ def test_image_completion_uploads_to_storage_and_returns_s3_keys(
     assert any("inlineData" in part for part in parts)
 
 
+def test_image_completion_replays_thought_signatures_for_follow_up_edits(
+    client,
+    session_factory: sessionmaker[Session],
+    fake_gemini_service,
+) -> None:
+    user_uuid = str(uuid4())
+    signup_response = client.post("/signup", json={"uuid": user_uuid, "api_key": "user-api-key"})
+    assert signup_response.status_code == 201
+
+    fake_gemini_service.next_events = [
+        GeminiImageEvent(data=b"generated-image-1", mime_type="image/png", thought_signature="sig-image-1"),
+        GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
+    ]
+
+    first_response = client.post(
+        "/chat/completion",
+        data={"uuid": user_uuid, "type": "image", "text": "make an image", "image_size": "1k"},
+        files={"files": ("input.png", b"input-image", "image/png")},
+    )
+    assert first_response.status_code == 200
+
+    with session_factory() as session:
+        chat = session.scalar(select(Chat))
+        assert chat is not None
+
+    fake_gemini_service.next_events = [
+        GeminiImageEvent(data=b"generated-image-2", mime_type="image/png", thought_signature="sig-image-2"),
+        GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
+    ]
+
+    second_response = client.post(
+        "/chat/completion",
+        data={
+            "uuid": user_uuid,
+            "chat_id": str(chat.chat_id),
+            "type": "image",
+            "text": "edit the previous image",
+            "image_size": "1k",
+        },
+    )
+    assert second_response.status_code == 200
+    assert fake_gemini_service.last_payload is not None
+
+    model_parts = [
+        part
+        for content in fake_gemini_service.last_payload["contents"]
+        if content["role"] == "model"
+        for part in content["parts"]
+    ]
+    assert any(part.get("thoughtSignature") == "sig-image-1" for part in model_parts)
+
+
 def test_generated_images_api_returns_paginated_user_gallery(
     client,
     session_factory: sessionmaker[Session],

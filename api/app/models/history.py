@@ -26,6 +26,7 @@ class History(Base):
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_s3_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    thought_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

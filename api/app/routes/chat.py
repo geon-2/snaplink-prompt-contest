@@ -80,6 +80,16 @@ class GeneratedAssistantImage:
     message_id: UUID
     s3_key: str
     mime_type: str
+    thought_signature: str | None = None
+
+
+@dataclass(slots=True)
+class AssistantResponsePart:
+    part_type: str
+    text_content: str | None = None
+    image_s3_key: str | None = None
+    mime_type: str | None = None
+    thought_signature: str | None = None
 
 
 @router.post("/chat/completion")
@@ -150,7 +160,7 @@ def chat_completion(
                 if payload.type is ChatCompletionType.IMAGE:
                     response_payload["generationConfig"] = {"responseModalities": ["TEXT", "IMAGE"]}
 
-                assistant_text_chunks: list[str] = []
+                assistant_response_parts: list[AssistantResponsePart] = []
                 assistant_images: list[GeneratedAssistantImage] = []
                 usage_metadata = GeminiUsageMetadata()
                 gemini_events = (
@@ -172,8 +182,15 @@ def chat_completion(
                         usage_metadata = event.metadata
                         continue
                     if isinstance(event, GeminiTextEvent):
-                        assistant_text_chunks.append(event.text)
-                        event_queue.put(_sse_event("text_delta", {"text": event.text}))
+                        assistant_response_parts.append(
+                            AssistantResponsePart(
+                                part_type="text",
+                                text_content=event.text,
+                                thought_signature=event.thought_signature,
+                            )
+                        )
+                        if event.text:
+                            event_queue.put(_sse_event("text_delta", {"text": event.text}))
                         continue
 
                     image_message_id = uuid4()
@@ -191,6 +208,15 @@ def chat_completion(
                             message_id=image_message_id,
                             s3_key=image_key,
                             mime_type=event.mime_type,
+                            thought_signature=event.thought_signature,
+                        )
+                    )
+                    assistant_response_parts.append(
+                        AssistantResponsePart(
+                            part_type="image",
+                            image_s3_key=image_key,
+                            mime_type=event.mime_type,
+                            thought_signature=event.thought_signature,
                         )
                     )
                     event_queue.put(_sse_event("image", {"s3_key": image_key}))
@@ -199,8 +225,7 @@ def chat_completion(
                     db_session=worker_session,
                     chat=chat,
                     user_uuid=payload.uuid,
-                    text_content="".join(assistant_text_chunks).strip() or None,
-                    generated_images=assistant_images,
+                    response_parts=assistant_response_parts,
                 )
                 cost_breakdown = calculate_usage_cost(
                     request_type=payload.type.value,
@@ -580,22 +605,26 @@ def _build_gemini_contents(
             current_message_id = row.message_id
             current_role = row.role
 
-        if row.part_type == "text" and row.text_content:
-            current_parts.append({"text": row.text_content})
+        if row.part_type == "text" and (row.text_content is not None or row.thought_signature):
+            text_part: dict[str, object] = {"text": row.text_content or ""}
+            if row.thought_signature:
+                text_part["thoughtSignature"] = row.thought_signature
+            current_parts.append(text_part)
             continue
 
         if row.part_type == "image" and row.image_s3_key:
             file_bytes, content_type = storage_service.download_object(row.image_s3_key)
             resolved_mime_type = row.mime_type or content_type or "application/octet-stream"
             if inline_images:
-                current_parts.append(
-                    {
-                        "inlineData": {
-                            "mimeType": resolved_mime_type,
-                            "data": base64.b64encode(file_bytes).decode("utf-8"),
-                        }
+                image_part: dict[str, object] = {
+                    "inlineData": {
+                        "mimeType": resolved_mime_type,
+                        "data": base64.b64encode(file_bytes).decode("utf-8"),
                     }
-                )
+                }
+                if row.thought_signature:
+                    image_part["thoughtSignature"] = row.thought_signature
+                current_parts.append(image_part)
                 continue
             temp_path = _write_bytes_to_temp(
                 data=file_bytes,
@@ -611,7 +640,10 @@ def _build_gemini_contents(
                 )
             finally:
                 _remove_temp_file(temp_path)
-            current_parts.append(gemini_service.build_file_part(uploaded_file))
+            image_part = gemini_service.build_file_part(uploaded_file)
+            if row.thought_signature:
+                image_part["thoughtSignature"] = row.thought_signature
+            current_parts.append(image_part)
 
     if current_parts:
         contents.append({"role": _gemini_role(current_role), "parts": current_parts})
@@ -624,79 +656,56 @@ def _create_assistant_messages(
     db_session: Session,
     chat: Chat,
     user_uuid: UUID,
-    text_content: str | None,
-    generated_images: list[GeneratedAssistantImage],
+    response_parts: list[AssistantResponsePart],
 ) -> None:
-    last_event_time: datetime | None = None
-    last_type: str | None = None
-    last_preview: str | None = None
+    if not response_parts:
+        return
 
-    if text_content:
-        created_at = _utcnow()
-        message_id = uuid4()
-        message = Message(
-            message_id=message_id,
-            chat_id=chat.chat_id,
-            user_uuid=user_uuid,
-            role=MessageRole.ASSISTANT.value,
-            type=MessageType.CHAT.value,
-            text_content=text_content,
-            created_at=created_at,
-        )
-        db_session.add(message)
-        db_session.flush()
+    created_at = _utcnow()
+    message_id = uuid4()
+    has_images = any(part.part_type == "image" and part.image_s3_key for part in response_parts)
+    text_content = "".join(part.text_content or "" for part in response_parts if part.part_type == "text").strip() or None
+    first_image_s3_key = next(
+        (part.image_s3_key for part in response_parts if part.part_type == "image" and part.image_s3_key),
+        None,
+    )
+    message_type = MessageType.IMAGE.value if has_images else MessageType.CHAT.value
+
+    message = Message(
+        message_id=message_id,
+        chat_id=chat.chat_id,
+        user_uuid=user_uuid,
+        role=MessageRole.ASSISTANT.value,
+        type=message_type,
+        text_content=text_content,
+        image_s3_key=first_image_s3_key,
+        created_at=created_at,
+    )
+    db_session.add(message)
+    db_session.flush()
+
+    for sequence, part in enumerate(response_parts):
         db_session.add(
             History(
                 chat_id=chat.chat_id,
                 message_id=message_id,
                 user_uuid=user_uuid,
                 role=MessageRole.ASSISTANT.value,
-                part_type="text",
-                text_content=text_content,
-                sequence=0,
+                part_type=part.part_type,
+                text_content=part.text_content if part.part_type == "text" else None,
+                image_s3_key=part.image_s3_key,
+                mime_type=part.mime_type,
+                thought_signature=part.thought_signature,
+                sequence=sequence,
                 created_at=created_at,
             )
         )
-        last_event_time = created_at
-        last_type = MessageType.CHAT.value
-        last_preview = _build_message_preview(MessageType.CHAT.value, text_content)
 
-    for generated_image in generated_images:
-        created_at = _utcnow()
-        message = Message(
-            message_id=generated_image.message_id,
-            chat_id=chat.chat_id,
-            user_uuid=user_uuid,
-            role=MessageRole.ASSISTANT.value,
-            type=MessageType.IMAGE.value,
-            image_s3_key=generated_image.s3_key,
-            created_at=created_at,
-        )
-        db_session.add(message)
-        db_session.flush()
-        db_session.add(
-            History(
-                chat_id=chat.chat_id,
-                message_id=generated_image.message_id,
-                user_uuid=user_uuid,
-                role=MessageRole.ASSISTANT.value,
-                part_type="image",
-                image_s3_key=generated_image.s3_key,
-                mime_type=generated_image.mime_type,
-                sequence=0,
-                created_at=created_at,
-            )
-        )
-        last_event_time = created_at
-        last_type = MessageType.IMAGE.value
-        last_preview = IMAGE_PREVIEW_TEXT
-
-    if last_event_time is not None and last_type is not None:
-        chat.last_message_preview = last_preview
-        chat.last_message_type = last_type
-        chat.last_message_at = last_event_time
-        chat.updated_at = last_event_time
-        db_session.add(chat)
+    chat.last_message_preview = _build_message_preview(message_type, text_content)
+    chat.last_message_type = message_type
+    chat.last_message_at = created_at
+    chat.updated_at = created_at
+    db_session.add(chat)
 
 
 def _create_usage_ledger(
