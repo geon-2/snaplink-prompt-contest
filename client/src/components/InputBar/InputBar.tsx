@@ -1,11 +1,19 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
+
+/**
+ * InputBar 외부에서 파일을 주입하기 위한 핸들
+ */
+export interface InputBarHandle {
+  addFiles: (files: File[]) => void;
+}
 
 /**
  * 채팅 입력 바 컴포넌트
  * - 텍스트 입력 + 이미지 파일 첨부 지원
  * - 첨부된 이미지는 입력 필드 위에 썸네일로 표시
+ * - 외부(드래그앤드롭, 클립보드)에서 addFiles()로 파일 주입 가능
  */
-export default function InputBar({
+const InputBar = forwardRef<InputBarHandle, any>(({
   value,
   onChange,
   onSend,
@@ -14,7 +22,7 @@ export default function InputBar({
   disabled = false,
   variant = 'pro',
   placeholder = '메시지를 입력하세요...',
-}: any) {
+}, ref) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
@@ -22,6 +30,13 @@ export default function InputBar({
   const [showError, setShowError] = useState(false);
   // 파일 input 리마운트용 key — 같은 파일 재선택 시 onChange 보장
   const [fileInputKey, setFileInputKey] = useState(0);
+
+  // 외부에서 파일을 주입할 수 있는 메서드 노출
+  useImperativeHandle(ref, () => ({
+    addFiles: (newFiles: File[]) => {
+      setFilesToUpload((prev) => [...prev, ...newFiles]);
+    },
+  }));
 
   // 텍스트영역 자동 높이 조절
   useEffect(() => {
@@ -51,7 +66,6 @@ export default function InputBar({
     
     if (!canSubmit) {
       setShowError(true);
-      // 잠시 후 에러 상태 해제 (애니메이션 반복을 위해)
       setTimeout(() => setShowError(false), 500);
       return;
     }
@@ -79,6 +93,22 @@ export default function InputBar({
 
   const handleRemoveFile = (index: number) => {
     setFilesToUpload((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // 클립보드 붙여넣기: textarea에서 이미지 감지
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    const imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      setFilesToUpload((prev) => [...prev, ...imageFiles]);
+    }
   };
 
   return (
@@ -147,6 +177,7 @@ export default function InputBar({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
@@ -173,8 +204,8 @@ export default function InputBar({
       </div>
     </div>
   );
-}
+});
 
+InputBar.displayName = 'InputBar';
 
-// v1.0.1 - Fixed HMR ReferenceError
-
+export default InputBar;

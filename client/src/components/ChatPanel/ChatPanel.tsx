@@ -1,13 +1,22 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import Message from '../Message/Message';
 import InputBar from '../InputBar/InputBar';
+import type { InputBarHandle } from '../InputBar/InputBar';
 
 /**
  * 채팅 패널 컴포넌트 (텍스트 또는 이미지)
+ *
+ * - 드래그앤드롭 이미지 첨부 지원 (패널별 독립 하이라이팅)
+ * - 클립보드 이미지 붙여넣기 지원
  */
 export default function ChatPanel({ variant, messages, isLoading, onSend, onStop, onRetry: _onRetry, onEdit: _onEdit, canClose, onClose }: any) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputBarRef = useRef<InputBarHandle>(null);
   const [inputValue, setInputValue] = useState('');
+
+  // 드래그앤드롭 상태
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounterRef = useRef(0);
 
   const isPro = variant === 'pro';
   const modelName = isPro ? 'Gemini 3.1 Pro' : 'Gemini 3.1 Flash';
@@ -29,8 +38,74 @@ export default function ChatPanel({ variant, messages, isLoading, onSend, onStop
     });
   };
 
+  // ─── 드래그앤드롭 핸들러 ───
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragOver(true);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDragOver(false);
+
+    const imageFiles = Array.from(e.dataTransfer.files).filter((f) =>
+      f.type.startsWith('image/')
+    );
+    if (imageFiles.length > 0 && inputBarRef.current) {
+      inputBarRef.current.addFiles(imageFiles);
+    }
+  }, []);
+
   return (
-    <div className="flex flex-col w-full h-full min-w-0 relative overflow-hidden" id={`panel-${variant}`}>
+    <div
+      className="flex flex-col w-full h-full min-w-0 relative overflow-hidden"
+      id={`panel-${variant}`}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* 드래그앤드롭 오버레이 */}
+      {isDragOver && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none animate-fadeIn">
+          <div className={`absolute inset-3 rounded-2xl border-[3px] border-dashed backdrop-blur-[2px] ${isPro ? 'border-accent-pro bg-accent-pro/[0.06]' : 'border-accent-flash bg-accent-flash/[0.06]'}`} />
+          <div className="relative flex flex-col items-center gap-3">
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg ${isPro ? 'bg-accent-pro/10 border-2 border-accent-pro/30' : 'bg-accent-flash/10 border-2 border-accent-flash/30'}`}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-7 h-7 ${isPro ? 'text-accent-pro' : 'text-accent-flash'}`}>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <span className={`font-black text-[15px] ${isPro ? 'text-accent-pro' : 'text-accent-flash'}`}>이미지를 여기에 놓으세요</span>
+              <span className="text-text-tertiary font-bold text-[12px]">PNG, JPG, WebP 지원</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border-default bg-white shrink-0 min-h-[58px] shadow-sm z-10">
         <div className="flex items-center gap-3">
@@ -93,6 +168,7 @@ export default function ChatPanel({ variant, messages, isLoading, onSend, onStop
 
       {/* Input */}
       <InputBar
+        ref={inputBarRef}
         value={inputValue}
         onChange={setInputValue}
         onSend={handleSend}
