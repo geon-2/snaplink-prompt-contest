@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { streamChatCompletion, fetchChatDetail } from '../services/api';
 import { getUserUuid } from '../services/auth';
 import { getImageUrl } from '../utils/s3';
@@ -44,6 +44,18 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
 
   // 세대 카운터 제거: 대신 각 스트림이 자신의 Message 객체를 클로저와 activeStreams 맵으로 관리
   const activeStreams = useRef<Map<string, Message>>(new Map());
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollCountRef = useRef(0);
+
+  const cancelPoll = useCallback(() => {
+    if (pollIntervalRef.current !== null) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    pollCountRef.current = 0;
+  }, []);
+
+  useEffect(() => () => cancelPoll(), [cancelPoll]);
 
   /**
    * 메시지 전송 — SSE 스트리밍 처리
@@ -54,6 +66,8 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
 
       const uuid = getUserUuid();
       if (!uuid) return;
+
+      cancelPoll();
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -184,7 +198,7 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
         abortControllerRef.current = null;
       }
     },
-    [isLoading, type, chatId]
+    [isLoading, type, chatId, cancelPoll]
   );
 
   /**
@@ -197,41 +211,86 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
     const uuid = getUserUuid();
     if (!uuid) return;
 
+    cancelPoll();
     setIsLoading(false);
 
     try {
       const detail = await fetchChatDetail(targetChatId, uuid);
       setChatId(targetChatId);
-      
+
       const loadedMsgs = detail.messages.map(apiMessageToUiMessage);
-      
-      // 진행 중인 메시지가 있다면 뒷단에 추가
+
+      // Case 1: 같은 세션 내 채팅 전환 — 백그라운드 스트림이 살아있으면 복원
       if (activeStreams.current.has(targetChatId)) {
         loadedMsgs.push(activeStreams.current.get(targetChatId)!);
+        setMessages(loadedMsgs);
+        setIsLoading(true);
+        return;
       }
-      
+
+      // Case 2: 페이지 새로고침 후 재진입 — 마지막 메시지가 user면 서버가 아직 처리 중
+      const lastApiMsg = detail.messages[detail.messages.length - 1];
+      if (lastApiMsg?.role === 'user') {
+        const placeholder: Message = {
+          id: `pending-${targetChatId}`,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date().toISOString(),
+          type,
+          isStreaming: type === 'chat',
+          isGenerating: type === 'image',
+        };
+        setMessages([...loadedMsgs, placeholder]);
+        setIsLoading(true);
+
+        const MAX_POLLS = 60; // 2분
+        pollCountRef.current = 0;
+        pollIntervalRef.current = setInterval(async () => {
+          pollCountRef.current += 1;
+          if (pollCountRef.current > MAX_POLLS) {
+            cancelPoll();
+            setIsLoading(false);
+            return;
+          }
+          try {
+            const updated = await fetchChatDetail(targetChatId, uuid);
+            const updatedLast = updated.messages[updated.messages.length - 1];
+            if (updatedLast?.role === 'assistant') {
+              cancelPoll();
+              setMessages(updated.messages.map(apiMessageToUiMessage));
+              setIsLoading(false);
+            }
+          } catch {
+            // 폴링 에러는 무시하고 재시도
+          }
+        }, 2000);
+        return;
+      }
+
       setMessages(loadedMsgs);
     } catch (error) {
       console.error('Failed to load chat:', error);
     }
-  }, []);
+  }, [type, cancelPoll]);
 
   /**
    * 새 채팅으로 초기화 (새 세션 시작 시)
    */
   const clearMessages = useCallback(() => {
+    cancelPoll();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     setChatId(null);
     setMessages([]);
     setIsLoading(false);
-  }, []);
+  }, [cancelPoll]);
 
   /**
    * 특정 메시지까지 롤백 (재요청/수정용)
    */
   const rollbackTo = useCallback((messageId: string) => {
+    cancelPoll();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -241,17 +300,18 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
       return prev.slice(0, idx);
     });
     setIsLoading(false);
-  }, []);
+  }, [cancelPoll]);
 
   /**
    * 생성 중단
    */
   const stopGeneration = useCallback(() => {
+    cancelPoll();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       setIsLoading(false);
     }
-  }, []);
+  }, [cancelPoll]);
 
   return {
     chatId,

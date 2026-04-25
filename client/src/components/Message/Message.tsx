@@ -127,6 +127,7 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
                     ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1 block" {...props} />,
                     li: ({node, ...props}) => <li className="pl-1" {...props} />,
                     a: ({node, ...props}) => <a className={`${isUser ? 'text-white underline' : 'text-blue-500 hover:text-blue-600'} hover:underline font-medium`} target="_blank" rel="noopener noreferrer" {...props} />,
+                    hr: ({node, ...props}) => <hr className={`my-4 border-t ${isUser ? 'border-white/30' : 'border-slate-200'}`} {...props} />,
                   }}
                 >
                   {content}
