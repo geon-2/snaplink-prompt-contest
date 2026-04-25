@@ -174,7 +174,7 @@ export async function fetchUsage(_uuid: string): Promise<UsageInfo> {
 
   const data = await resp.json();
   return {
-    used: parseFloat(data.used_usd ?? '0'),
-    budget: parseFloat(data.limit_usd ?? '10'),
+    used: parseFloat(data.used_krw ?? '0'),
+    budget: parseFloat(data.limit_krw ?? '0'),
   };
 }
