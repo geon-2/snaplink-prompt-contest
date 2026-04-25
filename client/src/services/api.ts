@@ -100,10 +100,15 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
 /**
  * GET /api/chats — 채팅 목록
  */
+export class UnauthorizedError extends Error {
+  constructor() { super('unauthorized'); }
+}
+
 export async function fetchChats(uuid: string): Promise<ChatListItem[]> {
   const resp = await fetch(`${API_BASE}/chats?uuid=${uuid}`, {
     credentials: 'include',
   });
+  if (resp.status === 401) throw new UnauthorizedError();
   if (!resp.ok) throw new Error(`채팅 목록 로드 실패 (${resp.status})`);
   return resp.json();
 }

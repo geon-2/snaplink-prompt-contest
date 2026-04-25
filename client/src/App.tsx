@@ -4,8 +4,8 @@ import ChatPanel from './components/ChatPanel/ChatPanel';
 import LoginPage from './components/Login/LoginPage';
 import SettingsModal from './components/Settings/SettingsModal';
 import { useChat } from './hooks/useChat';
-import { fetchChats, fetchUsage } from './services/api';
-import { getUserUuid, isAuthenticated } from './services/auth';
+import { fetchChats, fetchUsage, UnauthorizedError } from './services/api';
+import { getUserUuid, isAuthenticated, logout } from './services/auth';
 import type { ChatListItem, UsageInfo } from './types';
 
 function sortByRecent(items: ChatListItem[]): ChatListItem[] {
@@ -43,7 +43,6 @@ export default function App() {
     const init = async () => {
       try {
         const authed = isAuthenticated();
-        setIsLoggedIn(authed);
         if (authed) {
           const uuid = getUserUuid();
           if (uuid) {
@@ -51,10 +50,16 @@ export default function App() {
             setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
             setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
             setUsage(usageData);
+            setIsLoggedIn(true);
           }
         }
       } catch (error) {
-        console.error('Initialization failed:', error);
+        if (error instanceof UnauthorizedError) {
+          logout();
+          setIsLoggedIn(false);
+        } else {
+          console.error('Initialization failed:', error);
+        }
       } finally {
         setIsReady(true);
       }
