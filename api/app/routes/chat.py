@@ -115,6 +115,7 @@ def chat_completion(
             settings=settings,
             gemini_service=gemini_service,
             storage_service=storage_service,
+            inline_images=payload.type is ChatCompletionType.IMAGE,
         )
     except Exception:
         db_session.rollback()
@@ -138,13 +139,22 @@ def chat_completion(
         assistant_text_chunks: list[str] = []
         assistant_images: list[GeneratedAssistantImage] = []
         usage_metadata = GeminiUsageMetadata()
-
-        try:
-            for event in gemini_service.stream_generate_content(
+        gemini_events = (
+            gemini_service.generate_content(
                 api_key=user.api_key,
                 model=model_name,
                 payload=response_payload,
-            ):
+            )
+            if payload.type is ChatCompletionType.IMAGE
+            else gemini_service.stream_generate_content(
+                api_key=user.api_key,
+                model=model_name,
+                payload=response_payload,
+            )
+        )
+
+        try:
+            for event in gemini_events:
                 if isinstance(event, GeminiUsageEvent):
                     usage_metadata = event.metadata
                     continue
@@ -170,11 +180,7 @@ def chat_completion(
                         mime_type=event.mime_type,
                     )
                 )
-                yield _sse_event("image", {
-                    "s3_key": image_key,
-                    "data": base64.b64encode(event.data).decode(),
-                    "mime_type": event.mime_type,
-                })
+                yield _sse_event("image", {"s3_key": image_key})
 
             _create_assistant_messages(
                 db_session=db_session,
@@ -295,6 +301,21 @@ def get_chat_detail(
         .where(Message.chat_id == chat_id, Message.user_uuid == uuid)
         .order_by(Message.created_at.asc(), Message.message_id.asc())
     ).all()
+    image_histories = db_session.scalars(
+        select(History)
+        .where(
+            History.chat_id == chat_id,
+            History.user_uuid == uuid,
+            History.part_type == "image",
+            History.image_s3_key.is_not(None),
+        )
+        .order_by(History.created_at.asc(), History.id.asc(), History.sequence.asc())
+    ).all()
+    attached_images_by_message_id: dict[UUID, list[str]] = {}
+    for history_row in image_histories:
+        if history_row.image_s3_key is None:
+            continue
+        attached_images_by_message_id.setdefault(history_row.message_id, []).append(history_row.image_s3_key)
 
     return ChatDetailResponse(
         chat_id=chat.chat_id,
@@ -311,6 +332,7 @@ def get_chat_detail(
                 text_content=message.text_content,
                 image_s3_key=message.image_s3_key,
                 image_url=storage_service.generate_presigned_url(message.image_s3_key) if message.image_s3_key else None,
+                attached_images=attached_images_by_message_id.get(message.message_id),
                 created_at=message.created_at,
             )
             for message in messages
@@ -507,6 +529,7 @@ def _build_gemini_contents(
     settings: Settings,
     gemini_service: GeminiService,
     storage_service: S3StorageService,
+    inline_images: bool = False,
 ) -> list[dict[str, object]]:
     history_rows = db_session.scalars(
         select(History)
@@ -535,6 +558,16 @@ def _build_gemini_contents(
         if row.part_type == "image" and row.image_s3_key:
             file_bytes, content_type = storage_service.download_object(row.image_s3_key)
             resolved_mime_type = row.mime_type or content_type or "application/octet-stream"
+            if inline_images:
+                current_parts.append(
+                    {
+                        "inline_data": {
+                            "mime_type": resolved_mime_type,
+                            "data": base64.b64encode(file_bytes).decode("utf-8"),
+                        }
+                    }
+                )
+                continue
             temp_path = _write_bytes_to_temp(
                 data=file_bytes,
                 temp_upload_dir=settings.temp_upload_dir,

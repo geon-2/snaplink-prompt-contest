@@ -128,6 +128,24 @@ class GeminiService:
 
                     yield from self._parse_stream_chunk(json.loads(raw_data))
 
+    def generate_content(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        payload: dict[str, object],
+    ) -> list[GeminiStreamEvent]:
+        endpoint = f"{self.base_url}/v1beta/models/{model}:generateContent?key={api_key}"
+
+        with httpx.Client(timeout=300.0) as client:
+            response = client.post(
+                endpoint,
+                headers={"Content-Type": "application/json"},
+                json=payload,
+            )
+            response.raise_for_status()
+            return list(self._parse_stream_chunk(response.json()))
+
     @staticmethod
     def build_file_part(uploaded_file: GeminiUploadedFile) -> dict[str, object]:
         return {

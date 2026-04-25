@@ -65,6 +65,7 @@ class ChatMessageResponse(BaseModel):
     text_content: str | None
     image_s3_key: str | None
     image_url: str | None = None
+    attached_images: list[str] | None = None
     created_at: datetime
 
 

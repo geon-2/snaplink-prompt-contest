@@ -146,7 +146,9 @@ def test_image_completion_uploads_to_storage_and_returns_s3_keys(
         detail_response = client.get(f"/chats/{chat.chat_id}", params={"uuid": user_uuid})
         assert detail_response.status_code == 200
         detail_payload = detail_response.json()
+        assert detail_payload["messages"][0]["attached_images"] == [messages[0].image_s3_key]
         assert detail_payload["messages"][1]["image_s3_key"] == messages[1].image_s3_key
+        assert detail_payload["messages"][1]["attached_images"] == [messages[1].image_s3_key]
 
         ledger = session.scalar(select(UsageLedger))
         assert ledger is not None
