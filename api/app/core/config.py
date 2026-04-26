@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     gemini_base_url: str = "https://generativelanguage.googleapis.com"
     gemini_model: str = "gemini-3.1-pro-preview"
-    gemini_image_model: str = "gemini-3.1-flash-image-preview"
+    gemini_image_model: str = "gemini-3-pro-image-preview"
     aws_region: str = "ap-northeast-2"
     aws_access_key_id: str | None = None
     aws_secret_access_key: str | None = None

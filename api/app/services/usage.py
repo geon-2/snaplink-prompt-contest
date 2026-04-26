@@ -75,13 +75,13 @@ PRICING = {
         "output_gt_200k": Decimal("18.00") / Decimal("1000000"),
     },
     "image": {
-        "input_per_token": Decimal("0.50") / Decimal("1000000"),
-        "text_output_per_token": Decimal("3.00") / Decimal("1000000"),
+        "input_per_token": Decimal("2.00") / Decimal("1000000"),
+        "text_output_per_token": Decimal("12.00") / Decimal("1000000"),
         "per_image": {
-            "0.5k": Decimal("0.045"),
-            "1k": Decimal("0.067"),
-            "2k": Decimal("0.101"),
-            "4k": Decimal("0.151"),
+            "0.5k": Decimal("0.134"),
+            "1k": Decimal("0.134"),
+            "2k": Decimal("0.134"),
+            "4k": Decimal("0.240"),
         },
     },
 }
@@ -232,7 +232,7 @@ def calculate_total_cost_from_buckets(bucket_totals: UsageBucketTotals) -> Decim
         Decimal(bucket_totals.image_text_output_tokens) * PRICING["image"]["text_output_per_token"]
     )
     if bucket_totals.image_output_tokens > 0:
-        image_generation_cost = _quantize(Decimal(bucket_totals.image_output_tokens) * (Decimal("60.00") / Decimal("1000000")))
+        image_generation_cost = _quantize(Decimal(bucket_totals.image_output_tokens) * (Decimal("120.00") / Decimal("1000000")))
     else:
         image_generation_cost = _quantize(
             Decimal(bucket_totals.generated_image_count_05k) * PRICING["image"]["per_image"]["0.5k"]
@@ -336,7 +336,7 @@ def _calculate_image_cost(
     input_cost = _quantize(Decimal(input_token_count) * PRICING["image"]["input_per_token"])
     output_cost = _quantize(Decimal(text_output_tokens) * PRICING["image"]["text_output_per_token"])
     if image_output_tokens:
-        image_cost = _quantize(Decimal(image_output_tokens) * (Decimal("60.00") / Decimal("1000000")))
+        image_cost = _quantize(Decimal(image_output_tokens) * (Decimal("120.00") / Decimal("1000000")))
     else:
         image_cost = _quantize(Decimal(generated_image_count) * PRICING["image"]["per_image"][image_size])
     total_cost = _quantize(input_cost + output_cost + image_cost)
