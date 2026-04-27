@@ -46,6 +46,8 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
   const activeStreams = useRef<Map<string, Message>>(new Map());
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
+  // loadChat race condition 방지: 마지막으로 요청한 chatId 추적
+  const latestLoadChatIdRef = useRef<string | null>(null);
 
   const cancelPoll = useCallback(() => {
     if (pollIntervalRef.current !== null) {
@@ -213,9 +215,13 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
 
     cancelPoll();
     setIsLoading(false);
+    latestLoadChatIdRef.current = targetChatId;
 
     try {
       const detail = await fetchChatDetail(targetChatId, uuid);
+
+      // 응답 도착 시점에 다른 채팅방으로 이미 전환됐으면 stale 응답 무시
+      if (latestLoadChatIdRef.current !== targetChatId) return;
       setChatId(targetChatId);
 
       const loadedMsgs = detail.messages.map(apiMessageToUiMessage);

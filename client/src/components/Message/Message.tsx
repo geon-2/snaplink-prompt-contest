@@ -152,10 +152,9 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
             <img
               src={aiImageUrl}
               alt="생성된 이미지"
-              className={`block w-full h-auto rounded-2xl transition-all duration-700 ease-out ${imageLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95 h-0'}`}
+              className={`block w-full h-auto rounded-2xl transition-all duration-700 ease-out ${imageLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95 absolute'}`}
               onLoad={() => setImageLoaded(true)}
               onError={() => setImageLoaded(true)}
-              loading="lazy"
             />
             {/* hover 오버레이 */}
             {imageLoaded && (
