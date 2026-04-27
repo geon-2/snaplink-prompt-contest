@@ -19,8 +19,8 @@ export default function ChatPanel({ variant, messages, isLoading, onSend, onStop
   const dragCounterRef = useRef(0);
 
   const isPro = variant === 'pro';
-  const modelName = isPro ? 'Gemini 3.1 Pro' : 'Gemini 3.1 Flash';
-  const modelDesc = isPro ? '텍스트 채팅 · 스트리밍' : '이미지 생성 · 나노바나나';
+  const modelName = isPro ? 'Gemini 3.1 Pro' : 'Nano Banana Pro';
+  const modelDesc = isPro ? '텍스트 채팅' : '이미지 생성';
 
   // 새 메시지 시 스크롤
   useEffect(() => {
