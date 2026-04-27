@@ -40,6 +40,7 @@ export type SSEEvent =
 /** GET /chats 응답 아이템 */
 export interface ChatListItem {
   chat_id: string;
+  title?: string;
   last_message_preview: string;
   last_message_type: ChatType;
   last_message_at: string;

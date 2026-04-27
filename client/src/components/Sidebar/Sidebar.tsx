@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { ChatListItem, UsageInfo } from '../../types';
 import logo from '../../assets/logo.svg';
 
@@ -27,6 +27,8 @@ interface SidebarProps {
   onFlashSessionSelect: (chatId: string | null) => void;
   onToggle: () => void;
   onSettingsOpen: () => void;
+  onRenameSession: (chatId: string, newTitle: string) => void;
+  onDeleteSession: (chatId: string) => void;
   usage?: UsageInfo;
 }
 
@@ -46,18 +48,102 @@ function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
+function DotsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+      <circle cx="5" cy="12" r="1.5" />
+      <circle cx="12" cy="12" r="1.5" />
+      <circle cx="19" cy="12" r="1.5" />
+    </svg>
+  );
+}
+
 function SessionItem({
   session,
   isActive,
   onClick,
+  onRename,
+  onDelete,
 }: {
   session: ChatListItem;
   isActive: boolean;
   onClick: () => void;
+  onRename: (newTitle: string) => void;
+  onDelete: () => void;
 }) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const menuRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const displayName = session.title || session.last_message_preview?.slice(0, 30) || '새 대화';
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isMenuOpen]);
+
+  useEffect(() => {
+    if (isRenaming) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isRenaming]);
+
+  const handleRenameStart = () => {
+    setRenameValue(displayName);
+    setIsRenaming(true);
+    setIsMenuOpen(false);
+  };
+
+  const handleRenameSubmit = () => {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== displayName) {
+      onRename(trimmed);
+    }
+    setIsRenaming(false);
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleRenameSubmit();
+    } else if (e.key === 'Escape') {
+      setIsRenaming(false);
+    }
+  };
+
+  if (isRenaming) {
+    return (
+      <div
+        className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border mb-1 ${
+          isActive
+            ? 'bg-white border-slate-200 shadow-sm ring-2 ring-slate-100/80'
+            : 'bg-white border-slate-200'
+        }`}
+      >
+        <input
+          ref={inputRef}
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onKeyDown={handleRenameKeyDown}
+          onBlur={handleRenameSubmit}
+          className="flex-1 min-w-0 text-[12px] font-bold text-text-primary bg-transparent border-none outline-none"
+        />
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-all border mb-1 ${
+      className={`group flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-all border mb-1 ${
         isActive
           ? 'bg-white border-slate-200 shadow-sm ring-2 ring-slate-100/80'
           : 'hover:bg-white hover:border-slate-100 border-transparent'
@@ -70,11 +156,48 @@ function SessionItem({
             isActive ? 'text-text-primary' : 'text-text-secondary opacity-80'
           }`}
         >
-          {session.last_message_preview?.slice(0, 30) || '새 대화'}
+          {displayName}
         </div>
         <div className="text-[10.5px] text-text-tertiary font-bold opacity-50 mt-0.5">
           {formatRelativeTime(session.last_message_at)}
         </div>
+      </div>
+
+      <div className="relative shrink-0" ref={menuRef}>
+        <button
+          className="w-6 h-6 flex items-center justify-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-slate-100 transition-all opacity-0 group-hover:opacity-100"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsMenuOpen((prev) => !prev);
+          }}
+          title="더보기"
+        >
+          <DotsIcon />
+        </button>
+
+        {isMenuOpen && (
+          <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 min-w-[110px] animate-fadeIn">
+            <button
+              className="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-bold text-text-primary hover:bg-slate-50 transition-all text-left"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRenameStart();
+              }}
+            >
+              이름 변경
+            </button>
+            <button
+              className="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-bold text-red-500 hover:bg-red-50 transition-all text-left"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsMenuOpen(false);
+                onDelete();
+              }}
+            >
+              삭제
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -101,6 +224,45 @@ function NewChatItem({ isActive, onClick }: { isActive: boolean; onClick: () => 
   );
 }
 
+function DeleteConfirmModal({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-[2px] animate-fadeIn"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl p-6 max-w-[320px] w-full mx-4 border border-slate-100"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-[15px] font-black text-text-primary mb-1.5">대화를 삭제할까요?</h3>
+        <p className="text-[12.5px] text-text-tertiary font-bold mb-6 leading-relaxed">
+          삭제된 대화는 복구할 수 없습니다.
+        </p>
+        <div className="flex gap-2.5">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl text-[13px] font-black text-text-secondary bg-slate-100 hover:bg-slate-200 transition-all"
+          >
+            취소
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 py-2.5 rounded-xl text-[13px] font-black text-white bg-red-500 hover:bg-red-600 transition-all shadow-sm"
+          >
+            삭제
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Sidebar({
   proSessions,
   flashSessions,
@@ -112,22 +274,23 @@ export default function Sidebar({
   onFlashSessionSelect,
   onToggle,
   onSettingsOpen,
+  onRenameSession,
+  onDeleteSession,
   usage,
 }: SidebarProps) {
   const [proExpanded, setProExpanded] = useState(false);
   const [flashExpanded, setFlashExpanded] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const usagePercent = usage ? Math.min(100, (usage.used / usage.budget) * 100) : 0;
-
   const usedKRW = usage ? Math.floor(usage.used) : 0;
   const budgetKRW = usage ? Math.floor(usage.budget) : 0;
 
-  const handleProToggle = () => {
-    setProExpanded((prev) => !prev);
-  };
-
-  const handleFlashToggle = () => {
-    setFlashExpanded((prev) => !prev);
+  const handleDeleteConfirm = () => {
+    if (deleteTargetId) {
+      onDeleteSession(deleteTargetId);
+      setDeleteTargetId(null);
+    }
   };
 
   return (
@@ -206,19 +369,13 @@ export default function Sidebar({
                 ? 'bg-accent-pro/5 border-accent-pro/20 text-accent-pro'
                 : 'bg-slate-50 border-slate-100 text-text-secondary hover:bg-white hover:border-slate-200'
             }`}
-            onClick={handleProToggle}
+            onClick={() => setProExpanded((prev) => !prev)}
           >
-            <div
-              className={`w-6 h-6 rounded-md flex items-center justify-center text-[13px] shrink-0 ${
-                isProPanelOpen ? 'bg-accent-pro/10' : 'bg-slate-100'
-              }`}
-            >
+            <div className={`w-6 h-6 rounded-md flex items-center justify-center text-[13px] shrink-0 ${isProPanelOpen ? 'bg-accent-pro/10' : 'bg-slate-100'}`}>
               ✦
             </div>
             <span className="flex-1 text-left text-[12.5px] font-black">Gemini</span>
-            {isProPanelOpen && (
-              <span className="w-1.5 h-1.5 rounded-full bg-accent-pro animate-pulse shrink-0" />
-            )}
+            {isProPanelOpen && <span className="w-1.5 h-1.5 rounded-full bg-accent-pro animate-pulse shrink-0" />}
             <ChevronIcon open={proExpanded} />
           </button>
 
@@ -234,6 +391,8 @@ export default function Sidebar({
                   session={session}
                   isActive={isProPanelOpen && activeProChatId === session.chat_id}
                   onClick={() => onProSessionSelect(session.chat_id)}
+                  onRename={(newTitle) => onRenameSession(session.chat_id, newTitle)}
+                  onDelete={() => setDeleteTargetId(session.chat_id)}
                 />
               ))}
               {proSessions.length === 0 && (
@@ -253,19 +412,13 @@ export default function Sidebar({
                 ? 'bg-accent-flash/5 border-accent-flash/20 text-accent-flash'
                 : 'bg-slate-50 border-slate-100 text-text-secondary hover:bg-white hover:border-slate-200'
             }`}
-            onClick={handleFlashToggle}
+            onClick={() => setFlashExpanded((prev) => !prev)}
           >
-            <div
-              className={`w-6 h-6 rounded-md flex items-center justify-center text-[13px] shrink-0 ${
-                isFlashPanelOpen ? 'bg-accent-flash/10' : 'bg-slate-100'
-              }`}
-            >
+            <div className={`w-6 h-6 rounded-md flex items-center justify-center text-[13px] shrink-0 ${isFlashPanelOpen ? 'bg-accent-flash/10' : 'bg-slate-100'}`}>
               🎨
             </div>
             <span className="flex-1 text-left text-[12.5px] font-black">나노바나나</span>
-            {isFlashPanelOpen && (
-              <span className="w-1.5 h-1.5 rounded-full bg-accent-flash animate-pulse shrink-0" />
-            )}
+            {isFlashPanelOpen && <span className="w-1.5 h-1.5 rounded-full bg-accent-flash animate-pulse shrink-0" />}
             <ChevronIcon open={flashExpanded} />
           </button>
 
@@ -281,6 +434,8 @@ export default function Sidebar({
                   session={session}
                   isActive={isFlashPanelOpen && activeFlashChatId === session.chat_id}
                   onClick={() => onFlashSessionSelect(session.chat_id)}
+                  onRename={(newTitle) => onRenameSession(session.chat_id, newTitle)}
+                  onDelete={() => setDeleteTargetId(session.chat_id)}
                 />
               ))}
               {flashSessions.length === 0 && (
@@ -310,6 +465,13 @@ export default function Sidebar({
           </svg>
         </button>
       </div>
+
+      {deleteTargetId && (
+        <DeleteConfirmModal
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTargetId(null)}
+        />
+      )}
     </aside>
   );
 }

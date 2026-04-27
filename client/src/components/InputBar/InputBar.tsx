@@ -17,7 +17,6 @@ const InputBar = forwardRef<InputBarHandle, any>(({
   value,
   onChange,
   onSend,
-  onStop,
   isLoading = false,
   disabled = false,
   variant = 'pro',
@@ -184,22 +183,16 @@ const InputBar = forwardRef<InputBarHandle, any>(({
           id={`input-${variant}`}
         />
         <button
-          className={`flex items-center justify-center w-11 h-11 min-w-11 rounded-xl shadow-lg transition-all shrink-0 disabled:opacity-40 disabled:cursor-not-allowed text-white ${isLoading ? 'bg-red-500 shadow-red-500/20' : (variant === 'flash' ? 'bg-accent-flash shadow-accent-flash/20' : 'bg-accent-pro shadow-accent-pro/20 hover:scale-105 active:scale-95')}`}
-          onClick={isLoading ? onStop : handleSubmit}
-          disabled={!isLoading && (disabled || !canSubmit)}
-          aria-label={isLoading ? '생성 중단' : '메시지 전송'}
+          className={`flex items-center justify-center w-11 h-11 min-w-11 rounded-xl shadow-lg transition-all shrink-0 disabled:opacity-40 disabled:cursor-not-allowed text-white ${variant === 'flash' ? 'bg-accent-flash shadow-accent-flash/20' : 'bg-accent-pro shadow-accent-pro/20 hover:scale-105 active:scale-95'}`}
+          onClick={handleSubmit}
+          disabled={disabled || isLoading || !canSubmit}
+          aria-label="메시지 전송"
           id={`send-btn-${variant}`}
         >
-          {isLoading ? (
-            <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]">
-              <rect x="7" y="7" width="10" height="10" rx="1.5" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-          )}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
         </button>
       </div>
     </div>

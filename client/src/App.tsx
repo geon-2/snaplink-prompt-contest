@@ -4,7 +4,7 @@ import ChatPanel from './components/ChatPanel/ChatPanel';
 import LoginPage from './components/Login/LoginPage';
 import SettingsModal from './components/Settings/SettingsModal';
 import { useChat } from './hooks/useChat';
-import { fetchChats, fetchUsage, UnauthorizedError } from './services/api';
+import { fetchChats, fetchUsage, renameChat, deleteChat, UnauthorizedError } from './services/api';
 import { getUserUuid, isAuthenticated, logout } from './services/auth';
 import type { ChatListItem, UsageInfo } from './types';
 
@@ -138,6 +138,51 @@ export default function App() {
     [flashChat]
   );
 
+  const handleRenameSession = useCallback(
+    async (chatId: string, newTitle: string) => {
+      const uuid = getUserUuid();
+      // 로컬 상태 즉시 반영
+      const update = (sessions: ChatListItem[]) =>
+        sessions.map((s) => (s.chat_id === chatId ? { ...s, title: newTitle } : s));
+      setProSessions((prev) => update(prev));
+      setFlashSessions((prev) => update(prev));
+      // 서버 동기화 (백엔드 엔드포인트 준비되면 동작)
+      if (uuid) {
+        try {
+          await renameChat(chatId, newTitle, uuid);
+        } catch { /* ignore until backend is ready */ }
+      }
+    },
+    []
+  );
+
+  const handleDeleteSession = useCallback(
+    async (chatId: string) => {
+      const uuid = getUserUuid();
+      // 삭제 대상이 현재 활성 세션이면 패널 닫기
+      if (activeProChatId === chatId) {
+        setActiveProChatId(null);
+        setIsProPanelOpen(false);
+        proChat.clearMessages();
+      }
+      if (activeFlashChatId === chatId) {
+        setActiveFlashChatId(null);
+        setIsFlashPanelOpen(false);
+        flashChat.clearMessages();
+      }
+      // 로컬 상태 즉시 제거
+      setProSessions((prev) => prev.filter((s) => s.chat_id !== chatId));
+      setFlashSessions((prev) => prev.filter((s) => s.chat_id !== chatId));
+      // 서버 동기화 (백엔드 엔드포인트 준비되면 동작)
+      if (uuid) {
+        try {
+          await deleteChat(chatId, uuid);
+        } catch { /* ignore until backend is ready */ }
+      }
+    },
+    [activeProChatId, activeFlashChatId, proChat, flashChat]
+  );
+
   const handleProSend = useCallback(
     async (text: string, files?: File[]) => {
       await proChat.sendMessage(text, files);
@@ -193,6 +238,8 @@ export default function App() {
           onFlashSessionSelect={handleFlashSessionSelect}
           onToggle={() => setIsSidebarOpen(false)}
           onSettingsOpen={() => setIsSettingsOpen(true)}
+          onRenameSession={handleRenameSession}
+          onDeleteSession={handleDeleteSession}
           usage={usage}
         />
       </div>

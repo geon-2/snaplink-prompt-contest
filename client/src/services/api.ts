@@ -142,6 +142,7 @@ export async function fetchChatDetail(chatId: string, uuid: string): Promise<Cha
   // 서버 응답은 chat과 messages가 평탄화되어 있음 → ChatDetailResponse 형태로 변환
   const chat: ChatListItem = {
     chat_id: data.chat_id,
+    title: data.title ?? undefined,
     last_message_preview: data.last_message_preview,
     last_message_type: data.last_message_type,
     last_message_at: data.last_message_at,
@@ -161,6 +162,30 @@ export async function fetchChatDetail(chatId: string, uuid: string): Promise<Cha
   }));
 
   return { chat, messages };
+}
+
+/**
+ * PATCH /api/chats/:chat_id/title — 채팅 이름 변경
+ */
+export async function renameChat(chatId: string, title: string, uuid: string): Promise<void> {
+  const resp = await fetch(`${API_BASE}/chats/${chatId}/title`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uuid, title }),
+  });
+  if (!resp.ok) throw new Error(`채팅 이름 변경 실패 (${resp.status})`);
+}
+
+/**
+ * DELETE /api/chats/:chat_id — 채팅 삭제 (204 No Content)
+ */
+export async function deleteChat(chatId: string, uuid: string): Promise<void> {
+  const resp = await fetch(`${API_BASE}/chats/${chatId}?uuid=${uuid}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (resp.status !== 204 && !resp.ok) throw new Error(`채팅 삭제 실패 (${resp.status})`);
 }
 
 /**
