@@ -20,7 +20,12 @@ class History(Base):
         index=True,
         nullable=False,
     )
-    user_uuid: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("user.uuid"), index=True, nullable=False)
+    user_uuid: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("user.uuid"),
+        index=True,
+        nullable=True,
+    )
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     part_type: Mapped[str] = mapped_column(String(16), nullable=False)
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)

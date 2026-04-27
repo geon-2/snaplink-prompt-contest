@@ -34,6 +34,7 @@ from app.schemas.chat import (
     ChatImageSize,
     ChatMessageResponse,
     ChatSummaryResponse,
+    ChatTitleUpdateRequest,
     GeneratedImagePageResponse,
     GeneratedImageResponse,
     MessageRole,
@@ -358,6 +359,7 @@ def list_chats(
     return [
         ChatSummaryResponse(
             chat_id=chat.chat_id,
+            title=chat.title,
             last_message_preview=chat.last_message_preview,
             last_message_type=MessageType(chat.last_message_type) if chat.last_message_type else None,
             last_message_at=chat.last_message_at,
@@ -404,6 +406,7 @@ def get_chat_detail(
 
     return ChatDetailResponse(
         chat_id=chat.chat_id,
+        title=chat.title,
         created_at=chat.created_at,
         updated_at=chat.updated_at,
         last_message_preview=chat.last_message_preview,
@@ -423,6 +426,61 @@ def get_chat_detail(
             for message in messages
         ],
     )
+
+
+@router.patch("/chats/{chat_id}/title", response_model=ChatSummaryResponse)
+def update_chat_title(
+    request: Request,
+    chat_id: UUID,
+    payload: ChatTitleUpdateRequest,
+    db_session: Session = Depends(get_db_session),
+) -> ChatSummaryResponse:
+    authenticate_user_request(request=request, requested_uuid=payload.uuid, db_session=db_session)
+    chat = db_session.scalar(select(Chat).where(Chat.chat_id == chat_id, Chat.user_uuid == payload.uuid))
+    if chat is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat not found")
+
+    chat.title = payload.title
+    db_session.add(chat)
+    db_session.commit()
+    db_session.refresh(chat)
+    return ChatSummaryResponse(
+        chat_id=chat.chat_id,
+        title=chat.title,
+        last_message_preview=chat.last_message_preview,
+        last_message_type=MessageType(chat.last_message_type) if chat.last_message_type else None,
+        last_message_at=chat.last_message_at,
+        created_at=chat.created_at,
+        updated_at=chat.updated_at,
+    )
+
+
+@router.delete("/chats/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_chat_for_user(
+    request: Request,
+    chat_id: UUID,
+    uuid: UUID = Query(...),
+    db_session: Session = Depends(get_db_session),
+) -> Response:
+    authenticate_user_request(request=request, requested_uuid=uuid, db_session=db_session)
+    chat = db_session.scalar(select(Chat).where(Chat.chat_id == chat_id, Chat.user_uuid == uuid))
+    if chat is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat not found")
+
+    deleted_at = _utcnow()
+    chat.user_uuid = None
+    chat.updated_at = deleted_at
+    db_session.add(chat)
+    db_session.query(Message).filter(
+        Message.chat_id == chat_id,
+        Message.user_uuid == uuid,
+    ).update({Message.user_uuid: None}, synchronize_session=False)
+    db_session.query(History).filter(
+        History.chat_id == chat_id,
+        History.user_uuid == uuid,
+    ).update({History.user_uuid: None}, synchronize_session=False)
+    db_session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/images/generated", response_model=GeneratedImagePageResponse)
@@ -475,7 +533,21 @@ def get_image(
     db_session: Session = Depends(get_db_session),
     storage_service: S3StorageService = Depends(get_storage_service),
 ) -> Response:
-    authenticate_session_from_cookies(request=request, db_session=db_session)
+    user = authenticate_session_from_cookies(request=request, db_session=db_session)
+    owns_message_image = db_session.scalar(
+        select(Message.message_id).where(
+            Message.user_uuid == user.uuid,
+            Message.image_s3_key == s3_key,
+        )
+    )
+    owns_history_image = db_session.scalar(
+        select(History.id).where(
+            History.user_uuid == user.uuid,
+            History.image_s3_key == s3_key,
+        )
+    )
+    if owns_message_image is None and owns_history_image is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="image not found")
     try:
         data, content_type = storage_service.download_object(s3_key)
     except Exception:

@@ -13,7 +13,13 @@ class Chat(Base):
     __tablename__ = "chat"
 
     chat_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    user_uuid: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("user.uuid"), index=True, nullable=False)
+    user_uuid: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("user.uuid"),
+        index=True,
+        nullable=True,
+    )
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_message_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_message_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

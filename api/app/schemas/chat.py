@@ -5,7 +5,7 @@ from enum import Enum
 from uuid import UUID
 
 from fastapi import Form
-from pydantic import BaseModel, UUID4
+from pydantic import BaseModel, UUID4, field_validator
 
 
 class ChatCompletionType(str, Enum):
@@ -49,8 +49,28 @@ class ChatCompletionForm(BaseModel):
         return cls(uuid=uuid, chat_id=chat_id, type=type, text=text, image_size=image_size)
 
 
+class ChatTitleUpdateRequest(BaseModel):
+    uuid: UUID4
+    title: str | None
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def normalize_title(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        if not stripped:
+            return None
+        if len(stripped) > 255:
+            raise ValueError("title must be 255 characters or fewer")
+        return stripped
+
+
 class ChatSummaryResponse(BaseModel):
     chat_id: UUID
+    title: str | None
     last_message_preview: str | None
     last_message_type: MessageType | None
     last_message_at: datetime | None
@@ -71,6 +91,7 @@ class ChatMessageResponse(BaseModel):
 
 class ChatDetailResponse(BaseModel):
     chat_id: UUID
+    title: str | None
     created_at: datetime
     updated_at: datetime
     last_message_preview: str | None

@@ -402,6 +402,118 @@ def test_generated_images_api_returns_paginated_user_gallery(
     assert other_user_payload["items"][0]["image_s3_key"].startswith("tests/second-api-key/chats/")
 
 
+def test_chat_title_can_be_updated_only_for_owned_chat(
+    client,
+    session_factory: sessionmaker[Session],
+    fake_gemini_service,
+) -> None:
+    user_uuid = str(uuid4())
+    signup_response = client.post("/signup", json={"uuid": user_uuid, "api_key": "user-api-key"})
+    assert signup_response.status_code == 201
+
+    fake_gemini_service.next_events = [
+        GeminiTextEvent(text="hello"),
+        GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
+    ]
+    response = client.post(
+        "/chat/completion",
+        data={"uuid": user_uuid, "type": "chat", "text": "say hello"},
+    )
+    assert response.status_code == 200
+
+    with session_factory() as session:
+        chat = session.scalar(select(Chat))
+        assert chat is not None
+
+    title_response = client.patch(
+        f"/chats/{chat.chat_id}/title",
+        json={"uuid": user_uuid, "title": "My renamed chat"},
+    )
+    assert title_response.status_code == 200
+    assert title_response.json()["title"] == "My renamed chat"
+
+    list_response = client.get("/chats", params={"uuid": user_uuid})
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["title"] == "My renamed chat"
+
+    detail_response = client.get(f"/chats/{chat.chat_id}", params={"uuid": user_uuid})
+    assert detail_response.status_code == 200
+    assert detail_response.json()["title"] == "My renamed chat"
+
+    with session_factory() as session:
+        saved_chat = session.scalar(select(Chat).where(Chat.chat_id == chat.chat_id))
+        assert saved_chat is not None
+        assert saved_chat.title == "My renamed chat"
+
+
+def test_chat_delete_soft_deletes_user_ownership(
+    client,
+    session_factory: sessionmaker[Session],
+    fake_gemini_service,
+) -> None:
+    user_uuid = str(uuid4())
+    signup_response = client.post("/signup", json={"uuid": user_uuid, "api_key": "user-api-key"})
+    assert signup_response.status_code == 201
+
+    fake_gemini_service.next_events = [
+        GeminiImageEvent(data=b"generated-image", mime_type="image/png"),
+        GeminiUsageEvent(
+            metadata=GeminiUsageMetadata(
+                prompt_token_count=100,
+                candidates_token_count=1120,
+                prompt_token_details=(GeminiUsageTokenDetail(modality="TEXT", token_count=100),),
+                candidates_token_details=(GeminiUsageTokenDetail(modality="IMAGE", token_count=1120),),
+            )
+        ),
+    ]
+    response = client.post(
+        "/chat/completion",
+        data={"uuid": user_uuid, "type": "image", "text": "make an image", "image_size": "1k"},
+        files={"files": ("input.png", b"input-image", "image/png")},
+    )
+    assert response.status_code == 200
+
+    with session_factory() as session:
+        chat = session.scalar(select(Chat))
+        assert chat is not None
+        generated_message = session.scalar(
+            select(Message).where(
+                Message.chat_id == chat.chat_id,
+                Message.role == "assistant",
+                Message.type == "image",
+            )
+        )
+        assert generated_message is not None
+        assert generated_message.image_s3_key is not None
+        generated_image_s3_key = generated_message.image_s3_key
+
+    delete_response = client.delete(f"/chats/{chat.chat_id}", params={"uuid": user_uuid})
+    assert delete_response.status_code == 204
+
+    list_response = client.get("/chats", params={"uuid": user_uuid})
+    assert list_response.status_code == 200
+    assert list_response.json() == []
+
+    detail_response = client.get(f"/chats/{chat.chat_id}", params={"uuid": user_uuid})
+    assert detail_response.status_code == 404
+
+    generated_images_response = client.get("/images/generated", params={"uuid": user_uuid, "page": 1, "page_size": 20})
+    assert generated_images_response.status_code == 200
+    assert generated_images_response.json()["total"] == 0
+    image_response = client.get(f"/images/{generated_image_s3_key}")
+    assert image_response.status_code == 404
+
+    with session_factory() as session:
+        saved_chat = session.scalar(select(Chat).where(Chat.chat_id == chat.chat_id))
+        messages = session.scalars(select(Message).where(Message.chat_id == chat.chat_id)).all()
+        history_rows = session.scalars(select(History).where(History.chat_id == chat.chat_id)).all()
+
+        assert saved_chat is not None
+        assert saved_chat.user_uuid is None
+        assert all(message.user_uuid is None for message in messages)
+        assert all(history_row.user_uuid is None for history_row in history_rows)
+
+
 def test_chat_completion_continues_even_when_usage_exceeds_limit(
     client,
     fake_gemini_service,

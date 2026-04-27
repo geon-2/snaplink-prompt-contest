@@ -14,7 +14,12 @@ class Message(Base):
 
     message_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     chat_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("chat.chat_id"), index=True, nullable=False)
-    user_uuid: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("user.uuid"), index=True, nullable=False)
+    user_uuid: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("user.uuid"),
+        index=True,
+        nullable=True,
+    )
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     type: Mapped[str] = mapped_column(String(16), nullable=False)
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
