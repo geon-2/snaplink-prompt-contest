@@ -36,11 +36,6 @@ export default function Message({ message, variant = 'pro', onCopy }: any) {
   // imageDataUrl(base64) 우선, 없으면 S3 key → URL 변환
   const aiImageUrl = imageDataUrl || (imageS3Key ? getImageUrl(imageS3Key) : null);
 
-  // 이미지 URL이 변경되면 로딩 상태 리셋
-  useEffect(() => {
-    setImageLoaded(false);
-  }, [aiImageUrl]);
-
   return (
     <div
       ref={contentRef}
