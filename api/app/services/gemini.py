@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterator
+from typing import Callable, Iterator
 
 import httpx
 
@@ -111,6 +111,7 @@ class GeminiService:
         api_key: str,
         model: str,
         payload: dict[str, object],
+        on_open: Callable[[], None] | None = None,
     ) -> Iterator[GeminiStreamEvent]:
         endpoint = f"{self.base_url}/v1beta/models/{model}:streamGenerateContent?alt=sse&key={api_key}"
 
@@ -122,6 +123,8 @@ class GeminiService:
                 json=payload,
             ) as response:
                 response.raise_for_status()
+                if on_open is not None:
+                    on_open()
                 for line in response.iter_lines():
                     if not line:
                         continue
