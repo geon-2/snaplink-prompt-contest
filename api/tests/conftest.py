@@ -21,7 +21,7 @@ os.environ.setdefault("AWS_REGION", "ap-northeast-2")
 os.environ.setdefault("S3_BUCKET", "test-bucket")
 os.environ.setdefault("S3_PREFIX", "tests")
 os.environ.setdefault("TEMP_UPLOAD_DIR", ".tmp/tests")
-os.environ.setdefault("USAGE_LIMIT_KRW", "100000")
+os.environ.setdefault("USAGE_LIMIT_KRW", "12500")
 
 from app.db.base import Base
 from app.db.session import get_db_session
@@ -62,6 +62,8 @@ class FakeGeminiService:
         self.model = "gemini-test-chat"
         self.image_model = "gemini-test-image"
         self.last_payload: dict[str, object] | None = None
+        self.stream_exception: Exception | None = None
+        self.generate_exception: Exception | None = None
         self.next_events: list[GeminiTextEvent | GeminiImageEvent | GeminiUsageEvent] = [
             GeminiTextEvent(text="hello from gemini"),
             GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
@@ -83,8 +85,13 @@ class FakeGeminiService:
         api_key: str,
         model: str,
         payload: dict[str, object],
+        on_open=None,
     ) -> Iterator[GeminiTextEvent | GeminiImageEvent | GeminiUsageEvent]:
         self.last_payload = payload
+        if self.stream_exception is not None:
+            raise self.stream_exception
+        if on_open is not None:
+            on_open()
         yield from self.next_events
 
     def generate_content(
@@ -95,6 +102,8 @@ class FakeGeminiService:
         payload: dict[str, object],
     ) -> list[GeminiTextEvent | GeminiImageEvent | GeminiUsageEvent]:
         self.last_payload = payload
+        if self.generate_exception is not None:
+            raise self.generate_exception
         return list(self.next_events)
 
 

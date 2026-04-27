@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from queue import Queue
+from queue import Empty, Queue
 from threading import Thread
 from uuid import UUID, uuid4
 
@@ -94,6 +94,13 @@ class AssistantResponsePart:
     thought_signature: str | None = None
 
 
+@dataclass(slots=True)
+class StreamStartupResult:
+    ok: bool
+    status_code: int | None = None
+    detail: str | None = None
+
+
 @router.post("/chat/completion")
 def chat_completion(
     request: Request,
@@ -121,11 +128,21 @@ def chat_completion(
         expire_on_commit=False,
     )
     event_queue: Queue[str | None] = Queue()
+    startup_queue: Queue[StreamStartupResult] = Queue(maxsize=1)
 
     def process_request() -> None:
         api_key_hash = hash_api_key(user.api_key)
         request_id = uuid4()
         model_name = gemini_service.image_model if payload.type is ChatCompletionType.IMAGE else gemini_service.model
+        startup_notified = False
+
+        def notify_startup(result: StreamStartupResult) -> None:
+            nonlocal startup_notified
+            if startup_notified:
+                return
+            startup_queue.put(result)
+            startup_notified = True
+
         with worker_session_factory() as worker_session:
             try:
                 chat = _get_or_create_chat(db_session=worker_session, user_uuid=payload.uuid, chat_id=payload.chat_id)
@@ -165,19 +182,20 @@ def chat_completion(
                 assistant_response_parts: list[AssistantResponsePart] = []
                 assistant_images: list[GeneratedAssistantImage] = []
                 usage_metadata = GeminiUsageMetadata()
-                gemini_events = (
-                    gemini_service.generate_content(
+                if payload.type is ChatCompletionType.IMAGE:
+                    gemini_events = gemini_service.generate_content(
                         api_key=user.api_key,
                         model=model_name,
                         payload=response_payload,
                     )
-                    if payload.type is ChatCompletionType.IMAGE
-                    else gemini_service.stream_generate_content(
+                    notify_startup(StreamStartupResult(ok=True))
+                else:
+                    gemini_events = gemini_service.stream_generate_content(
                         api_key=user.api_key,
                         model=model_name,
                         payload=response_payload,
+                        on_open=lambda: notify_startup(StreamStartupResult(ok=True)),
                     )
-                )
 
                 for event in gemini_events:
                     if isinstance(event, GeminiUsageEvent):
@@ -276,6 +294,13 @@ def chat_completion(
                     )
                 )
             except Exception as exc:
+                notify_startup(
+                    StreamStartupResult(
+                        ok=False,
+                        status_code=_status_code_for_exception(exc),
+                        detail=_format_exception_detail(exc),
+                    )
+                )
                 worker_session.rollback()
                 try:
                     error_detail = _format_exception_detail(exc)
@@ -328,6 +353,20 @@ def chat_completion(
 
     worker = Thread(target=process_request, name=f"chat-completion-{uuid4()}")
     worker.start()
+
+    try:
+        startup_result = startup_queue.get(timeout=30)
+    except Empty as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="gemini startup timed out",
+        ) from exc
+
+    if not startup_result.ok:
+        raise HTTPException(
+            status_code=startup_result.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=startup_result.detail or "gemini request failed",
+        )
 
     def stream_events() -> object:
         while True:
@@ -1011,3 +1050,13 @@ def _format_exception_detail(exc: Exception) -> str:
         if response_text:
             return f"{exc}. Response: {response_text}"
     return str(exc)
+
+
+def _status_code_for_exception(exc: Exception) -> int:
+    if isinstance(exc, HTTPException):
+        return exc.status_code
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code
+    if isinstance(exc, httpx.TimeoutException):
+        return status.HTTP_504_GATEWAY_TIMEOUT
+    return status.HTTP_500_INTERNAL_SERVER_ERROR

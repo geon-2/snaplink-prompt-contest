@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import uuid4
 
+import httpx
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -108,11 +109,11 @@ def test_chat_completion_streams_text_and_persists_history(
     assert usage_response.status_code == 200
     assert usage_response.json() == {
         "used_usd": "0.026000",
-        "remaining_usd": "66.427649",
-        "limit_usd": "66.453649",
+        "remaining_usd": "8.280706",
+        "limit_usd": "8.306706",
         "used_krw": "39",
-        "remaining_krw": "99961",
-        "limit_krw": "100000",
+        "remaining_krw": "12461",
+        "limit_krw": "12500",
         "usd_to_krw_rate": "1504.808272",
         "exchange_rate_date": "2026-04-01",
         "quota_exceeded": False,
@@ -146,6 +147,31 @@ def test_usage_snapshot_is_calculated_from_raw_usage_buckets(
     usage_response = client.get("/usage/me")
     assert usage_response.status_code == 200
     assert usage_response.json()["used_usd"] == "0.026000"
+
+
+def test_chat_completion_returns_http_error_when_gemini_startup_fails(
+    client,
+    fake_gemini_service,
+) -> None:
+    user_uuid = str(uuid4())
+    signup_response = client.post("/signup", json={"uuid": user_uuid, "api_key": "user-api-key"})
+    assert signup_response.status_code == 201
+
+    request = httpx.Request("POST", "https://example.invalid")
+    response = httpx.Response(400, request=request, text='{"error":{"message":"bad request"}}')
+    fake_gemini_service.stream_exception = httpx.HTTPStatusError(
+        "Client error '400 Bad Request' for url 'https://example.invalid'",
+        request=request,
+        response=response,
+    )
+
+    completion_response = client.post(
+        "/chat/completion",
+        data={"uuid": user_uuid, "type": "chat", "text": "say hello"},
+    )
+
+    assert completion_response.status_code == 400
+    assert "bad request" in completion_response.json()["detail"]
 
 
 def test_image_completion_uploads_to_storage_and_returns_s3_keys(
@@ -540,10 +566,10 @@ def test_chat_completion_continues_even_when_usage_exceeds_limit(
     assert usage_response.json() == {
         "used_usd": "72.002000",
         "remaining_usd": "0.000000",
-        "limit_usd": "66.453649",
-        "used_krw": "108351",
+        "limit_usd": "8.306706",
+        "used_krw": "108349",
         "remaining_krw": "0",
-        "limit_krw": "100000",
+        "limit_krw": "12500",
         "usd_to_krw_rate": "1504.808272",
         "exchange_rate_date": "2026-04-01",
         "quota_exceeded": True,
