@@ -9,6 +9,40 @@ import type {
 const API_BASE = '/api';
 const ENABLE_API_DEBUG_LOGS = import.meta.env.DEV;
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function parseSseData(rawData: string): unknown {
+  if (!rawData) return null;
+  try {
+    return JSON.parse(rawData);
+  } catch {
+    return rawData;
+  }
+}
+
+function sseErrorMessage(data: unknown): string {
+  if (typeof data === 'string' && data.trim()) return data;
+
+  const record = asRecord(data);
+  if (!record) return '오류가 발생했습니다.';
+
+  const detail = stringValue(record.detail);
+  if (detail) return detail;
+
+  const message = stringValue(record.message);
+  if (message) return message;
+
+  const nestedError = record.error;
+  const nestedMessage = stringValue(asRecord(nestedError)?.message);
+  return nestedMessage || '오류가 발생했습니다.';
+}
+
 /**
  * POST /api/chat/completion — SSE 스트리밍
  *
@@ -84,7 +118,67 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-  let currentEventType = '';
+
+  const dispatchSseEvent = (rawEvent: string): boolean => {
+    const lines = rawEvent.split(/\r?\n/);
+    let eventType = 'message';
+    const dataLines: string[] = [];
+
+    for (const line of lines) {
+      if (!line || line.startsWith(':')) continue;
+
+      const separatorIndex = line.indexOf(':');
+      const field = separatorIndex === -1 ? line : line.slice(0, separatorIndex);
+      const value = separatorIndex === -1 ? '' : line.slice(separatorIndex + 1).replace(/^ /, '');
+
+      if (field === 'event') {
+        eventType = value;
+      } else if (field === 'data') {
+        dataLines.push(value);
+      }
+    }
+
+    const data = parseSseData(dataLines.join('\n'));
+    const record = asRecord(data);
+
+    switch (eventType) {
+      case 'meta': {
+        const chatId = stringValue(record?.chat_id);
+        const userMessageId = stringValue(record?.user_message_id);
+        const messageId = stringValue(record?.message_id) ?? (userMessageId ? `ai-${userMessageId}` : undefined);
+        if (chatId && userMessageId && messageId) {
+          onMeta({
+            chat_id: chatId,
+            message_id: messageId,
+            user_message_id: userMessageId,
+          });
+        }
+        break;
+      }
+      case 'text_delta': {
+        const delta = stringValue(record?.text) ?? stringValue(record?.delta);
+        if (delta !== undefined) {
+          onTextDelta({ delta });
+        }
+        break;
+      }
+      case 'image':
+        onImage({
+          s3_key: stringValue(record?.s3_key) ?? '',
+          data: stringValue(record?.data),
+          mime_type: stringValue(record?.mime_type),
+        });
+        break;
+      case 'done':
+        onDone();
+        return false;
+      case 'error':
+        onError({ message: sseErrorMessage(data) });
+        return false;
+    }
+
+    return true;
+  };
 
   try {
     while (true) {
@@ -92,45 +186,19 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
+      const rawEvents = buffer.split(/\r?\n\r?\n/);
+      buffer = rawEvents.pop() ?? '';
 
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          currentEventType = line.slice(7).trim();
-        } else if (line.startsWith('data: ')) {
-          const raw = line.slice(6);
-          try {
-            const data = JSON.parse(raw);
-            switch (currentEventType) {
-              case 'meta':
-                onMeta({
-                  chat_id: data.chat_id,
-                  // 서버는 message_id를 반환하지 않으므로 합성
-                  message_id: `ai-${data.user_message_id}`,
-                  user_message_id: data.user_message_id,
-                });
-                break;
-              case 'text_delta':
-                // 서버는 { text } 로 전송, 클라이언트 인터페이스는 { delta }
-                onTextDelta({ delta: data.text });
-                break;
-              case 'image':
-                onImage({ s3_key: data.s3_key, data: data.data, mime_type: data.mime_type });
-                break;
-              case 'done':
-                onDone();
-                break;
-              case 'error':
-                onError({ message: data.detail || '오류가 발생했습니다.' });
-                break;
-            }
-          } catch {
-            // JSON 파싱 실패 무시
-          }
-          currentEventType = '';
+      for (const rawEvent of rawEvents) {
+        if (rawEvent && !dispatchSseEvent(rawEvent)) {
+          return;
         }
       }
+    }
+
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      dispatchSseEvent(buffer);
     }
   } finally {
     reader.releaseLock();
