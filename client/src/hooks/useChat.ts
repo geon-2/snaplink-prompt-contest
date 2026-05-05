@@ -1,8 +1,14 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { streamChatCompletion, fetchChatDetail } from '../services/api';
+import { streamChatCompletion, fetchChatDetail, fetchChats } from '../services/api';
 import { getUserUuid } from '../services/auth';
 import { getImageUrl } from '../utils/s3';
-import type { Message, ChatType, ApiMessage } from '../types';
+import type { Message, ChatType, ApiMessage, ChatDetailResponse, ChatListItem } from '../types';
+
+const RECOVERY_POLL_INTERVAL_MS = 2000;
+const RECOVERY_MAX_POLLS = 150; // 5분
+const RECOVERY_SESSION_GRACE_MS = 10000;
+const STARTUP_TIMEOUT_RECOVERY_MESSAGE = '이미지 생성이 계속 진행 중입니다. 완료되면 자동으로 표시됩니다.';
+const RECOVERY_EXPIRED_MESSAGE = '아직 완료되지 않았습니다. 잠시 후 새로고침하거나 세션을 다시 열어 확인해주세요.';
 
 /**
  * API 메시지 → UI 메시지 변환
@@ -27,6 +33,56 @@ function apiMessageToUiMessage(msg: ApiMessage): Message {
   };
 }
 
+function normalizePreview(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').slice(0, 120);
+}
+
+function getSessionTimeMs(session: ChatListItem): number {
+  const times = [session.last_message_at, session.updated_at, session.created_at]
+    .map((value) => Date.parse(value))
+    .filter((value) => Number.isFinite(value));
+  return times.length > 0 ? Math.max(...times) : 0;
+}
+
+function findRecoverySession(
+  sessions: ChatListItem[],
+  prompt: string,
+  requestStartedAtMs: number
+): ChatListItem | null {
+  const promptPreview = normalizePreview(prompt);
+  const earliestAcceptedTime = requestStartedAtMs - RECOVERY_SESSION_GRACE_MS;
+  const candidates = sessions
+    .filter((session) => session.last_message_type === 'image')
+    .filter((session) => getSessionTimeMs(session) >= earliestAcceptedTime)
+    .sort((a, b) => getSessionTimeMs(b) - getSessionTimeMs(a));
+
+  const previewMatch = candidates.find((session) => {
+    const sessionPreview = normalizePreview(session.last_message_preview);
+    return (
+      promptPreview.length > 0 &&
+      sessionPreview.length > 0 &&
+      (sessionPreview === promptPreview ||
+        promptPreview.startsWith(sessionPreview) ||
+        sessionPreview.startsWith(promptPreview))
+    );
+  });
+
+  return previewMatch ?? candidates[0] ?? null;
+}
+
+function hasRecoveredAssistant(
+  detail: ChatDetailResponse,
+  knownMessageIds: Set<string>,
+  requestStartedAtMs: number
+): boolean {
+  const lastMessage = detail.messages[detail.messages.length - 1];
+  if (!lastMessage || lastMessage.role !== 'assistant') return false;
+  if (knownMessageIds.has(lastMessage.message_id)) return false;
+
+  const createdAtMs = Date.parse(lastMessage.created_at);
+  return !Number.isFinite(createdAtMs) || createdAtMs >= requestStartedAtMs - RECOVERY_SESSION_GRACE_MS;
+}
+
 /**
  * 채팅 기능을 관리하는 커스텀 훅
  *
@@ -36,7 +92,11 @@ function apiMessageToUiMessage(msg: ApiMessage): Message {
  *
  * @param type - 패널 타입 ('chat' | 'image')
  */
-export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => void) {
+export function useChat(
+  type: ChatType,
+  onNewChatCreated?: (chatId: string) => void,
+  onChatUpdated?: () => void
+) {
   const [chatId, setChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -46,10 +106,12 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
   const activeStreams = useRef<Map<string, Message>>(new Map());
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
+  const pollRunIdRef = useRef(0);
   // loadChat race condition 방지: 마지막으로 요청한 chatId 추적
   const latestLoadChatIdRef = useRef<string | null>(null);
 
   const cancelPoll = useCallback(() => {
+    pollRunIdRef.current += 1;
     if (pollIntervalRef.current !== null) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
@@ -77,6 +139,8 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
+      const requestStartedAtMs = Date.now();
+      const knownMessageIds = new Set(messages.map((message) => message.id));
 
       const tempUserMsgId = `temp-user-${Date.now()}`;
       const userMessage: Message = {
@@ -105,6 +169,7 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
       let resolvedAiMsgId = tempAiMsgId;
       let activeMsg = aiMessage;
       let streamChatId = chatId;
+      let keepLoadingAfterRequest = false;
 
       // 현재 진행 중인 메시지 상태를 업데이트하고, Global Map과 현재 UI(messages)에 동기화
       const updateActiveMessage = (updater: (msg: Message) => Message) => {
@@ -121,6 +186,82 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
       if (streamChatId) {
         activeStreams.current.set(streamChatId, activeMsg);
       }
+
+      const startImageRecoveryPoll = (initialChatId: string | null) => {
+        let targetChatId = initialChatId;
+        let pollInFlight = false;
+        const pollRunId = ++pollRunIdRef.current;
+        pollCountRef.current = 0;
+        setIsLoading(true);
+
+        const finishRecovery = (detail: ChatDetailResponse) => {
+          cancelPoll();
+          if (targetChatId) {
+            activeStreams.current.delete(targetChatId);
+          }
+          setMessages(detail.messages.map(apiMessageToUiMessage));
+          setIsLoading(false);
+          onChatUpdated?.();
+        };
+
+        const expireRecovery = () => {
+          cancelPoll();
+          updateActiveMessage((msg) => ({
+            ...msg,
+            content: RECOVERY_EXPIRED_MESSAGE,
+            isStreaming: false,
+            isGenerating: false,
+            isError: false,
+          }));
+          if (targetChatId) {
+            activeStreams.current.delete(targetChatId);
+          }
+          setIsLoading(false);
+          onChatUpdated?.();
+        };
+
+        const pollOnce = async () => {
+          if (pollRunIdRef.current !== pollRunId || pollInFlight) return;
+          pollInFlight = true;
+          pollCountRef.current += 1;
+
+          if (pollCountRef.current > RECOVERY_MAX_POLLS) {
+            pollInFlight = false;
+            expireRecovery();
+            return;
+          }
+
+          try {
+            if (!targetChatId) {
+              const sessions = await fetchChats(uuid);
+              if (pollRunIdRef.current !== pollRunId) return;
+              const recoveredSession = findRecoverySession(sessions, prompt, requestStartedAtMs);
+              if (!recoveredSession) return;
+
+              targetChatId = recoveredSession.chat_id;
+              streamChatId = recoveredSession.chat_id;
+              latestLoadChatIdRef.current = recoveredSession.chat_id;
+              setChatId(recoveredSession.chat_id);
+              onNewChatCreated?.(recoveredSession.chat_id);
+            }
+
+            const detail = await fetchChatDetail(targetChatId, uuid);
+            if (pollRunIdRef.current !== pollRunId) return;
+            if (hasRecoveredAssistant(detail, knownMessageIds, requestStartedAtMs)) {
+              finishRecovery(detail);
+            }
+          } catch {
+            // 복구 폴링은 일시적인 조회 실패를 무시하고 다음 tick에서 재시도한다.
+          } finally {
+            pollInFlight = false;
+          }
+        };
+
+        pollIntervalRef.current = setInterval(() => {
+          void pollOnce();
+        }, RECOVERY_POLL_INTERVAL_MS);
+        void pollOnce();
+      };
 
       try {
         await streamChatCompletion({
@@ -183,6 +324,21 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
             }));
             if (streamChatId) activeStreams.current.delete(streamChatId);
           },
+
+          onStartupTimeout: () => {
+            keepLoadingAfterRequest = true;
+            updateActiveMessage((msg) => ({
+              ...msg,
+              content: STARTUP_TIMEOUT_RECOVERY_MESSAGE,
+              isStreaming: false,
+              isGenerating: true,
+              isError: false,
+            }));
+            if (streamChatId) {
+              activeStreams.current.delete(streamChatId);
+            }
+            startImageRecoveryPoll(streamChatId);
+          },
         });
       } catch (error: unknown) {
         if (error instanceof Error && error.name === 'AbortError') return;
@@ -196,11 +352,13 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
         }));
         if (streamChatId) activeStreams.current.delete(streamChatId);
       } finally {
-        setIsLoading(false);
+        if (!keepLoadingAfterRequest) {
+          setIsLoading(false);
+        }
         abortControllerRef.current = null;
       }
     },
-    [isLoading, type, chatId, cancelPoll]
+    [isLoading, type, chatId, messages, cancelPoll, onNewChatCreated, onChatUpdated]
   );
 
   /**
@@ -249,27 +407,43 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
         setMessages([...loadedMsgs, placeholder]);
         setIsLoading(true);
 
-        const MAX_POLLS = 60; // 2분
+        const knownMessageIds = new Set(detail.messages.map((message) => message.message_id));
+        const pollStartedAtMs = Date.now();
         pollCountRef.current = 0;
+        const pollRunId = ++pollRunIdRef.current;
         pollIntervalRef.current = setInterval(async () => {
+          if (pollRunIdRef.current !== pollRunId) return;
           pollCountRef.current += 1;
-          if (pollCountRef.current > MAX_POLLS) {
+          if (pollCountRef.current > RECOVERY_MAX_POLLS) {
             cancelPoll();
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === placeholder.id
+                  ? {
+                      ...message,
+                      content: RECOVERY_EXPIRED_MESSAGE,
+                      isStreaming: false,
+                      isGenerating: false,
+                    }
+                  : message
+              )
+            );
             setIsLoading(false);
             return;
           }
           try {
             const updated = await fetchChatDetail(targetChatId, uuid);
-            const updatedLast = updated.messages[updated.messages.length - 1];
-            if (updatedLast?.role === 'assistant') {
+            if (pollRunIdRef.current !== pollRunId) return;
+            if (hasRecoveredAssistant(updated, knownMessageIds, pollStartedAtMs)) {
               cancelPoll();
               setMessages(updated.messages.map(apiMessageToUiMessage));
               setIsLoading(false);
+              onChatUpdated?.();
             }
           } catch {
             // 폴링 에러는 무시하고 재시도
           }
-        }, 2000);
+        }, RECOVERY_POLL_INTERVAL_MS);
         return;
       }
 
@@ -277,7 +451,7 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
     } catch (error) {
       console.error('Failed to load chat:', error);
     }
-  }, [type, cancelPoll]);
+  }, [type, cancelPoll, onChatUpdated]);
 
   /**
    * 새 채팅으로 초기화 (새 세션 시작 시)
@@ -315,8 +489,8 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
     cancelPoll();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      setIsLoading(false);
     }
+    setIsLoading(false);
   }, [cancelPoll]);
 
   return {
@@ -330,4 +504,3 @@ export function useChat(type: ChatType, onNewChatCreated?: (chatId: string) => v
     rollbackTo,
   };
 }
-

@@ -14,7 +14,21 @@ const API_BASE = '/api';
  * 요청 중단(signal)은 서버 미지원으로 비활성화.
  */
 export async function streamChatCompletion(params: ChatCompletionParams): Promise<void> {
-  const { uuid, chatId, partnerChatId, type, text, files, signal, onMeta, onTextDelta, onImage, onDone, onError } = params;
+  const {
+    uuid,
+    chatId,
+    partnerChatId,
+    type,
+    text,
+    files,
+    signal,
+    onMeta,
+    onTextDelta,
+    onImage,
+    onDone,
+    onError,
+    onStartupTimeout,
+  } = params;
 
   const formData = new FormData();
   formData.append('uuid', uuid);
@@ -51,8 +65,13 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
+    const detail = typeof body.detail === 'string' ? body.detail : '';
     console.error(`[API] 응답 에러 ${response.status}`, body);
-    onError({ message: body.detail || `서버 오류 (${response.status})` });
+    if (type === 'image' && response.status === 504 && detail === 'gemini startup timed out') {
+      onStartupTimeout?.({ message: detail });
+      if (onStartupTimeout) return;
+    }
+    onError({ message: detail || `서버 오류 (${response.status})` });
     return;
   }
 

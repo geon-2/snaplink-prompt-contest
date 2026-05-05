@@ -33,9 +33,13 @@ export default function App() {
   const proChat = useChat('chat', (id) => {
     setActiveProChatId(id);
     refreshData();
+  }, () => {
+    refreshData();
   });
   const flashChat = useChat('image', (id) => {
     setActiveFlashChatId(id);
+    refreshData();
+  }, () => {
     refreshData();
   });
 

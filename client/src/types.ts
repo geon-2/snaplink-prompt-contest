@@ -120,6 +120,7 @@ export interface ChatCompletionParams {
   onImage: (data: SSEImageEvent) => void;
   onDone: () => void;
   onError: (data: SSEErrorEvent) => void;
+  onStartupTimeout?: (data: SSEErrorEvent) => void;
 }
 
 /** 사용량 정보 */
