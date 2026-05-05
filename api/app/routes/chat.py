@@ -62,6 +62,7 @@ router = APIRouter(tags=["chat"])
 
 IMAGE_PREVIEW_TEXT = "[image]"
 THOUGHT_SIGNATURE_FALLBACK = "skip_thought_signature_validator"
+SSE_HEARTBEAT_INTERVAL_SECONDS = 15
 
 
 @dataclass(slots=True)
@@ -145,6 +146,8 @@ def chat_completion(
 
         with worker_session_factory() as worker_session:
             try:
+                if payload.type is ChatCompletionType.IMAGE:
+                    notify_startup(StreamStartupResult(ok=True))
                 chat = _get_or_create_chat(db_session=worker_session, user_uuid=payload.uuid, chat_id=payload.chat_id)
                 user_message = _create_user_message(
                     db_session=worker_session,
@@ -188,7 +191,6 @@ def chat_completion(
                         model=model_name,
                         payload=response_payload,
                     )
-                    notify_startup(StreamStartupResult(ok=True))
                 else:
                     gemini_events = gemini_service.stream_generate_content(
                         api_key=user.api_key,
@@ -370,7 +372,11 @@ def chat_completion(
 
     def stream_events() -> object:
         while True:
-            event = event_queue.get()
+            try:
+                event = event_queue.get(timeout=SSE_HEARTBEAT_INTERVAL_SECONDS)
+            except Empty:
+                yield ": keep-alive\n\n"
+                continue
             if event is None:
                 break
             yield event
@@ -378,7 +384,10 @@ def chat_completion(
     return StreamingResponse(
         stream_events(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache"},
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
