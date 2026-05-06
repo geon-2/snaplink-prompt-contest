@@ -14,6 +14,17 @@ function sortByRecent(items: ChatListItem[]): ChatListItem[] {
   );
 }
 
+function classifyChats(chats: ChatListItem[], knownFlashIds: Set<string>) {
+  const flash = chats.filter(
+    (c) => knownFlashIds.has(c.chat_id) || c.last_message_type === 'image'
+  );
+  flash.forEach((c) => knownFlashIds.add(c.chat_id));
+  const pro = chats.filter(
+    (c) => !knownFlashIds.has(c.chat_id) && c.last_message_type === 'chat'
+  );
+  return { pro, flash };
+}
+
 export default function App() {
   const [isReady, setIsReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -32,18 +43,18 @@ export default function App() {
 
   const [usageAlert, setUsageAlert] = useState<'warn' | 'critical' | null>(null);
   const alertedThresholds = useRef<Set<number>>(new Set());
+  const knownFlashChatIds = useRef<Set<string>>(new Set());
 
   const [isBudgetExceeded, setIsBudgetExceeded] = useState(false);
 
   const proChat = useChat('chat', (id) => {
     setActiveProChatId(id);
-    refreshData();
   }, () => {
     refreshData();
   }, () => setIsBudgetExceeded(true));
   const flashChat = useChat('image', (id) => {
     setActiveFlashChatId(id);
-    refreshData();
+    knownFlashChatIds.current.add(id);
   }, () => {
     refreshData();
   }, () => setIsBudgetExceeded(true));
@@ -56,8 +67,9 @@ export default function App() {
           const uuid = getUserUuid();
           if (uuid) {
             const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-            setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
-            setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
+            const { pro, flash } = classifyChats(chats, knownFlashChatIds.current);
+            setProSessions(sortByRecent(pro));
+            setFlashSessions(sortByRecent(flash));
             setUsage(usageData);
             setIsLoggedIn(true);
           }
@@ -96,8 +108,9 @@ export default function App() {
     if (uuid) {
       try {
         const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-        setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
-        setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
+        const { pro, flash } = classifyChats(chats, knownFlashChatIds.current);
+        setProSessions(sortByRecent(pro));
+        setFlashSessions(sortByRecent(flash));
         setUsage(usageData);
       } catch (err) {
         if (err instanceof UnauthorizedError) {
@@ -113,8 +126,9 @@ export default function App() {
     if (!uuid) return;
     try {
       const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-      setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
-      setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
+      const { pro, flash } = classifyChats(chats, knownFlashChatIds.current);
+      setProSessions(sortByRecent(pro));
+      setFlashSessions(sortByRecent(flash));
       setUsage(usageData);
     } catch { /* ignore */ }
   }, []);
