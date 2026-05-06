@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar/Sidebar';
 import ChatPanel from './components/ChatPanel/ChatPanel';
 import LoginPage from './components/Login/LoginPage';
@@ -29,6 +29,9 @@ export default function App() {
   const [isProPanelOpen, setIsProPanelOpen] = useState(false);
   const [isFlashPanelOpen, setIsFlashPanelOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const [usageAlert, setUsageAlert] = useState<'warn' | 'critical' | null>(null);
+  const alertedThresholds = useRef<Set<number>>(new Set());
 
   const proChat = useChat('chat', (id) => {
     setActiveProChatId(id);
@@ -113,6 +116,24 @@ export default function App() {
       setUsage(usageData);
     } catch { /* ignore */ }
   }, []);
+
+  useEffect(() => {
+    if (!usage || !usage.budget) return;
+    const percent = (usage.used / usage.budget) * 100;
+    if (percent >= 90 && !alertedThresholds.current.has(90)) {
+      alertedThresholds.current.add(90);
+      setUsageAlert('critical');
+    } else if (percent >= 80 && !alertedThresholds.current.has(80)) {
+      alertedThresholds.current.add(80);
+      setUsageAlert('warn');
+    }
+  }, [usage]);
+
+  useEffect(() => {
+    if (!usageAlert) return;
+    const timer = setTimeout(() => setUsageAlert(null), 12000);
+    return () => clearTimeout(timer);
+  }, [usageAlert]);
 
   const handleProSessionSelect = useCallback(
     (chatId: string | null) => {
@@ -316,6 +337,37 @@ export default function App() {
           onLogout={handleLogout}
           onApiKeyUpdated={() => {}}
         />
+      )}
+
+      {usageAlert && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[300] flex items-start gap-3.5 px-5 py-4 rounded-2xl shadow-2xl border animate-fadeIn max-w-[360px] w-[calc(100%-2rem)] ${
+          usageAlert === 'critical'
+            ? 'bg-red-50 border-red-200'
+            : 'bg-amber-50 border-amber-200'
+        }`}>
+          <span className="text-xl shrink-0 mt-0.5">
+            {usageAlert === 'critical' ? '🚨' : '⚠️'}
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className={`text-[13px] font-black mb-0.5 ${usageAlert === 'critical' ? 'text-red-700' : 'text-amber-700'}`}>
+              {usageAlert === 'critical' ? '예산 한도 임박' : '예산 주의'}
+            </div>
+            <div className={`text-[12px] font-bold leading-relaxed ${usageAlert === 'critical' ? 'text-red-600/80' : 'text-amber-600/80'}`}>
+              {usageAlert === 'critical'
+                ? '사용량이 90%에 달했습니다. 남은 예산이 얼마 없으니 신중하게 사용해 주세요.'
+                : '사용량이 80%에 달했습니다. 예산이 얼마 남지 않았으니 신중하게 사용해 주세요.'}
+            </div>
+          </div>
+          <button
+            onClick={() => setUsageAlert(null)}
+            className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-md transition-colors mt-0.5 ${usageAlert === 'critical' ? 'text-red-400 hover:text-red-600 hover:bg-red-100' : 'text-amber-400 hover:text-amber-600 hover:bg-amber-100'}`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
       )}
     </div>
   );
