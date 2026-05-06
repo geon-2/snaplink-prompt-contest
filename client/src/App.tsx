@@ -43,7 +43,13 @@ export default function App() {
 
   const [usageAlert, setUsageAlert] = useState<'warn' | 'critical' | null>(null);
   const alertedThresholds = useRef<Set<number>>(new Set());
-  const knownFlashChatIds = useRef<Set<string>>(new Set());
+  const knownFlashChatIds = useRef<Set<string>>((() => {
+    try {
+      return new Set<string>(JSON.parse(localStorage.getItem('known_flash_chat_ids') ?? '[]'));
+    } catch {
+      return new Set<string>();
+    }
+  })());
 
   const [isBudgetExceeded, setIsBudgetExceeded] = useState(false);
 
@@ -55,6 +61,7 @@ export default function App() {
   const flashChat = useChat('image', (id) => {
     setActiveFlashChatId(id);
     knownFlashChatIds.current.add(id);
+    localStorage.setItem('known_flash_chat_ids', JSON.stringify([...knownFlashChatIds.current]));
   }, () => {
     refreshData();
   }, () => setIsBudgetExceeded(true));
@@ -100,6 +107,8 @@ export default function App() {
     setIsSettingsOpen(false);
     proChat.clearMessages();
     flashChat.clearMessages();
+    knownFlashChatIds.current.clear();
+    localStorage.removeItem('known_flash_chat_ids');
   }, [proChat, flashChat]);
 
   const handleLoginSuccess = useCallback(async () => {
