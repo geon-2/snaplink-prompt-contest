@@ -33,18 +33,20 @@ export default function App() {
   const [usageAlert, setUsageAlert] = useState<'warn' | 'critical' | null>(null);
   const alertedThresholds = useRef<Set<number>>(new Set());
 
+  const [isBudgetExceeded, setIsBudgetExceeded] = useState(false);
+
   const proChat = useChat('chat', (id) => {
     setActiveProChatId(id);
     refreshData();
   }, () => {
     refreshData();
-  });
+  }, () => setIsBudgetExceeded(true));
   const flashChat = useChat('image', (id) => {
     setActiveFlashChatId(id);
     refreshData();
   }, () => {
     refreshData();
-  });
+  }, () => setIsBudgetExceeded(true));
 
   useEffect(() => {
     const init = async () => {
@@ -134,6 +136,12 @@ export default function App() {
     const timer = setTimeout(() => setUsageAlert(null), 12000);
     return () => clearTimeout(timer);
   }, [usageAlert]);
+
+  useEffect(() => {
+    if (usage && usage.budget > 0 && usage.used >= usage.budget) {
+      setIsBudgetExceeded(true);
+    }
+  }, [usage]);
 
   const handleProSessionSelect = useCallback(
     (chatId: string | null) => {
@@ -294,6 +302,7 @@ export default function App() {
                 variant="pro"
                 messages={proChat.messages}
                 isLoading={proChat.isLoading}
+                isBudgetExceeded={isBudgetExceeded}
                 onSend={handleProSend}
                 onStop={proChat.stopGeneration}
                 onRetry={(id: string, content: string) => {
@@ -314,6 +323,7 @@ export default function App() {
                 variant="flash"
                 messages={flashChat.messages}
                 isLoading={flashChat.isLoading}
+                isBudgetExceeded={isBudgetExceeded}
                 onSend={handleFlashSend}
                 onStop={flashChat.stopGeneration}
                 onRetry={(id: string, content: string) => {
@@ -337,6 +347,18 @@ export default function App() {
           onLogout={handleLogout}
           onApiKeyUpdated={() => {}}
         />
+      )}
+
+      {isBudgetExceeded && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[300] flex items-start gap-3.5 px-5 py-4 rounded-2xl shadow-2xl border animate-fadeIn max-w-[380px] w-[calc(100%-2rem)] bg-red-600 border-red-700">
+          <span className="text-xl shrink-0 mt-0.5">🚫</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-black mb-0.5 text-white">예산 한도 초과</div>
+            <div className="text-[12px] font-bold leading-relaxed text-red-100">
+              이번 대회의 사용 한도에 도달했습니다. 더 이상 메시지를 전송할 수 없습니다.
+            </div>
+          </div>
+        </div>
       )}
 
       {usageAlert && (

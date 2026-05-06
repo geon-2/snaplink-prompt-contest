@@ -9,7 +9,7 @@ import type { InputBarHandle } from '../InputBar/InputBar';
  * - 드래그앤드롭 이미지 첨부 지원 (패널별 독립 하이라이팅)
  * - 클립보드 이미지 붙여넣기 지원
  */
-export default function ChatPanel({ variant, messages, isLoading, onSend, onStop, onRetry: _onRetry, onEdit: _onEdit, canClose, onClose }: any) {
+export default function ChatPanel({ variant, messages, isLoading, isBudgetExceeded, onSend, onStop, onRetry: _onRetry, onEdit: _onEdit, canClose, onClose }: any) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputBarRef = useRef<InputBarHandle>(null);
   const [inputValue, setInputValue] = useState('');
@@ -167,17 +167,26 @@ export default function ChatPanel({ variant, messages, isLoading, onSend, onStop
       </div>
 
       {/* Input */}
-      <InputBar
-        ref={inputBarRef}
-        value={inputValue}
-        onChange={setInputValue}
-        onSend={handleSend}
-        onStop={onStop}
-        isLoading={isLoading}
-        disabled={false}
-        variant={variant}
-        placeholder={variant === 'flash' ? '이미지로 생성할 메시지를 입력해 보세요...' : '궁금한 내용을 질문해 보세요...'}
-      />
+      {isBudgetExceeded ? (
+        <div className="px-6 py-5 bg-white border-t border-border-default shrink-0">
+          <div className="flex items-center justify-center gap-2.5 py-3.5 px-5 rounded-2xl bg-red-50 border border-red-200">
+            <span className="text-base">🚫</span>
+            <span className="text-[13px] font-bold text-red-600">예산 한도에 도달하여 더 이상 메시지를 전송할 수 없습니다.</span>
+          </div>
+        </div>
+      ) : (
+        <InputBar
+          ref={inputBarRef}
+          value={inputValue}
+          onChange={setInputValue}
+          onSend={handleSend}
+          onStop={onStop}
+          isLoading={isLoading}
+          disabled={false}
+          variant={variant}
+          placeholder={variant === 'flash' ? '이미지로 생성할 메시지를 입력해 보세요...' : '궁금한 내용을 질문해 보세요...'}
+        />
+      )}
     </div>
   );
 }

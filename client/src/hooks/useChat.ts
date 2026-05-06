@@ -95,7 +95,8 @@ function hasRecoveredAssistant(
 export function useChat(
   type: ChatType,
   onNewChatCreated?: (chatId: string) => void,
-  onChatUpdated?: () => void
+  onChatUpdated?: () => void,
+  onBudgetExceeded?: () => void,
 ) {
   const [chatId, setChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -323,6 +324,15 @@ export function useChat(
               isError: true,
             }));
             if (streamChatId) activeStreams.current.delete(streamChatId);
+          },
+
+          onBudgetExceeded: () => {
+            // 채팅에 오류 메시지 남기지 않고 임시 메시지 제거
+            setMessages((prev) =>
+              prev.filter((msg) => msg.id !== resolvedAiMsgId && msg.id !== tempAiMsgId)
+            );
+            if (streamChatId) activeStreams.current.delete(streamChatId);
+            onBudgetExceeded?.();
           },
 
           onStartupTimeout: () => {

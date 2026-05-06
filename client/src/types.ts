@@ -121,6 +121,7 @@ export interface ChatCompletionParams {
   onDone: () => void;
   onError: (data: SSEErrorEvent) => void;
   onStartupTimeout?: (data: SSEErrorEvent) => void;
+  onBudgetExceeded?: () => void;
 }
 
 /** 사용량 정보 */

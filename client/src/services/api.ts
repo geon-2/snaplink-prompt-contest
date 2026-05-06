@@ -26,6 +26,10 @@ function parseSseData(rawData: string): unknown {
   }
 }
 
+function isBudgetExhausted(message: string): boolean {
+  return message.includes('RESOURCE_EXHAUSTED') || message.includes('spending cap');
+}
+
 function sseErrorMessage(data: unknown): string {
   if (typeof data === 'string' && data.trim()) return data;
 
@@ -63,6 +67,7 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
     onDone,
     onError,
     onStartupTimeout,
+    onBudgetExceeded,
   } = params;
 
   const formData = new FormData();
@@ -110,6 +115,10 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
     if (type === 'image' && response.status === 504 && detail === 'gemini startup timed out') {
       onStartupTimeout?.({ message: detail });
       if (onStartupTimeout) return;
+    }
+    if (response.status === 429) {
+      onBudgetExceeded?.();
+      return;
     }
     onError({ message: detail || `서버 오류 (${response.status})` });
     return;
@@ -172,9 +181,15 @@ export async function streamChatCompletion(params: ChatCompletionParams): Promis
       case 'done':
         onDone();
         return false;
-      case 'error':
-        onError({ message: sseErrorMessage(data) });
+      case 'error': {
+        const msg = sseErrorMessage(data);
+        if (isBudgetExhausted(msg)) {
+          onBudgetExceeded?.();
+        } else {
+          onError({ message: msg });
+        }
         return false;
+      }
     }
 
     return true;
