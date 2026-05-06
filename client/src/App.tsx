@@ -14,16 +14,6 @@ function sortByRecent(items: ChatListItem[]): ChatListItem[] {
   );
 }
 
-function classifyChats(chats: ChatListItem[], knownFlashIds: Set<string>) {
-  const flash = chats.filter(
-    (c) => knownFlashIds.has(c.chat_id) || c.last_message_type === 'image'
-  );
-  flash.forEach((c) => knownFlashIds.add(c.chat_id));
-  const pro = chats.filter(
-    (c) => !knownFlashIds.has(c.chat_id) && c.last_message_type === 'chat'
-  );
-  return { pro, flash };
-}
 
 export default function App() {
   const [isReady, setIsReady] = useState(false);
@@ -43,25 +33,18 @@ export default function App() {
 
   const [usageAlert, setUsageAlert] = useState<'warn' | 'critical' | null>(null);
   const alertedThresholds = useRef<Set<number>>(new Set());
-  const knownFlashChatIds = useRef<Set<string>>((() => {
-    try {
-      return new Set<string>(JSON.parse(localStorage.getItem('known_flash_chat_ids') ?? '[]'));
-    } catch {
-      return new Set<string>();
-    }
-  })());
 
   const [isBudgetExceeded, setIsBudgetExceeded] = useState(false);
 
   const proChat = useChat('chat', (id) => {
     setActiveProChatId(id);
+    refreshData();
   }, () => {
     refreshData();
   }, () => setIsBudgetExceeded(true));
   const flashChat = useChat('image', (id) => {
     setActiveFlashChatId(id);
-    knownFlashChatIds.current.add(id);
-    localStorage.setItem('known_flash_chat_ids', JSON.stringify([...knownFlashChatIds.current]));
+    refreshData();
   }, () => {
     refreshData();
   }, () => setIsBudgetExceeded(true));
@@ -74,9 +57,8 @@ export default function App() {
           const uuid = getUserUuid();
           if (uuid) {
             const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-            const { pro, flash } = classifyChats(chats, knownFlashChatIds.current);
-            setProSessions(sortByRecent(pro));
-            setFlashSessions(sortByRecent(flash));
+            setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
+            setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
             setUsage(usageData);
             setIsLoggedIn(true);
           }
@@ -107,8 +89,6 @@ export default function App() {
     setIsSettingsOpen(false);
     proChat.clearMessages();
     flashChat.clearMessages();
-    knownFlashChatIds.current.clear();
-    localStorage.removeItem('known_flash_chat_ids');
   }, [proChat, flashChat]);
 
   const handleLoginSuccess = useCallback(async () => {
@@ -117,9 +97,8 @@ export default function App() {
     if (uuid) {
       try {
         const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-        const { pro, flash } = classifyChats(chats, knownFlashChatIds.current);
-        setProSessions(sortByRecent(pro));
-        setFlashSessions(sortByRecent(flash));
+        setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
+        setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
         setUsage(usageData);
       } catch (err) {
         if (err instanceof UnauthorizedError) {
@@ -135,9 +114,8 @@ export default function App() {
     if (!uuid) return;
     try {
       const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-      const { pro, flash } = classifyChats(chats, knownFlashChatIds.current);
-      setProSessions(sortByRecent(pro));
-      setFlashSessions(sortByRecent(flash));
+      setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
+      setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
       setUsage(usageData);
     } catch { /* ignore */ }
   }, []);
