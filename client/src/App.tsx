@@ -145,25 +145,24 @@ export default function App() {
   const handleRenameSession = useCallback(
     async (chatId: string, newTitle: string) => {
       const uuid = getUserUuid();
-      // 로컬 상태 즉시 반영
       const update = (sessions: ChatListItem[]) =>
         sessions.map((s) => (s.chat_id === chatId ? { ...s, title: newTitle } : s));
       setProSessions((prev) => update(prev));
       setFlashSessions((prev) => update(prev));
-      // 서버 동기화 (백엔드 엔드포인트 준비되면 동작)
       if (uuid) {
         try {
           await renameChat(chatId, newTitle, uuid);
-        } catch { /* ignore until backend is ready */ }
+        } catch {
+          refreshData();
+        }
       }
     },
-    []
+    [refreshData]
   );
 
   const handleDeleteSession = useCallback(
     async (chatId: string) => {
       const uuid = getUserUuid();
-      // 삭제 대상이 현재 활성 세션이면 패널 닫기
       if (activeProChatId === chatId) {
         setActiveProChatId(null);
         setIsProPanelOpen(false);
@@ -174,17 +173,17 @@ export default function App() {
         setIsFlashPanelOpen(false);
         flashChat.clearMessages();
       }
-      // 로컬 상태 즉시 제거
       setProSessions((prev) => prev.filter((s) => s.chat_id !== chatId));
       setFlashSessions((prev) => prev.filter((s) => s.chat_id !== chatId));
-      // 서버 동기화 (백엔드 엔드포인트 준비되면 동작)
       if (uuid) {
         try {
           await deleteChat(chatId, uuid);
-        } catch { /* ignore until backend is ready */ }
+        } catch {
+          refreshData();
+        }
       }
     },
-    [activeProChatId, activeFlashChatId, proChat, flashChat]
+    [activeProChatId, activeFlashChatId, proChat, flashChat, refreshData]
   );
 
   const handleProSend = useCallback(
