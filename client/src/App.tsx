@@ -14,6 +14,21 @@ function sortByRecent(items: ChatListItem[]): ChatListItem[] {
   );
 }
 
+const CHAT_TYPE_KEY = 'pa_chat_types';
+
+function getChatTypeMap(): Record<string, 'chat' | 'image'> {
+  try { return JSON.parse(localStorage.getItem(CHAT_TYPE_KEY) ?? '{}'); } catch { return {}; }
+}
+
+function recordChatType(chatId: string, type: 'chat' | 'image') {
+  const map = getChatTypeMap();
+  map[chatId] = type;
+  localStorage.setItem(CHAT_TYPE_KEY, JSON.stringify(map));
+}
+
+function clearChatTypeMap() {
+  localStorage.removeItem(CHAT_TYPE_KEY);
+}
 
 export default function App() {
   const [isReady, setIsReady] = useState(false);
@@ -38,12 +53,14 @@ export default function App() {
 
   const proChat = useChat('chat', (id) => {
     setActiveProChatId(id);
+    recordChatType(id, 'chat');
     refreshData();
   }, () => {
     refreshData();
   }, () => setIsBudgetExceeded(true));
   const flashChat = useChat('image', (id) => {
     setActiveFlashChatId(id);
+    recordChatType(id, 'image');
     refreshData();
   }, () => {
     refreshData();
@@ -57,8 +74,9 @@ export default function App() {
           const uuid = getUserUuid();
           if (uuid) {
             const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-            setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
-            setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
+            const typeMap = getChatTypeMap();
+            setProSessions(sortByRecent(chats.filter((c) => (typeMap[c.chat_id] ?? c.last_message_type) === 'chat')));
+            setFlashSessions(sortByRecent(chats.filter((c) => (typeMap[c.chat_id] ?? c.last_message_type) === 'image')));
             setUsage(usageData);
             setIsLoggedIn(true);
           }
@@ -89,6 +107,7 @@ export default function App() {
     setIsSettingsOpen(false);
     proChat.clearMessages();
     flashChat.clearMessages();
+    clearChatTypeMap();
   }, [proChat, flashChat]);
 
   const handleLoginSuccess = useCallback(async () => {
@@ -97,8 +116,9 @@ export default function App() {
     if (uuid) {
       try {
         const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-        setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
-        setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
+        const typeMap = getChatTypeMap();
+        setProSessions(sortByRecent(chats.filter((c) => (typeMap[c.chat_id] ?? c.last_message_type) === 'chat')));
+        setFlashSessions(sortByRecent(chats.filter((c) => (typeMap[c.chat_id] ?? c.last_message_type) === 'image')));
         setUsage(usageData);
       } catch (err) {
         if (err instanceof UnauthorizedError) {
@@ -114,8 +134,9 @@ export default function App() {
     if (!uuid) return;
     try {
       const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-      setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
-      setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
+      const typeMap = getChatTypeMap();
+      setProSessions(sortByRecent(chats.filter((c) => (typeMap[c.chat_id] ?? c.last_message_type) === 'chat')));
+      setFlashSessions(sortByRecent(chats.filter((c) => (typeMap[c.chat_id] ?? c.last_message_type) === 'image')));
       setUsage(usageData);
     } catch { /* ignore */ }
   }, []);
