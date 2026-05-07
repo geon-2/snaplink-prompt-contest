@@ -274,13 +274,7 @@ export default function App() {
   if (currentRoute === 'submit') {
     return (
       <>
-        <ContestSubmitPage
-          onBackToChat={() => navigateTo('/')}
-          onOpenAssets={() => setIsContestAssetsOpen(true)}
-        />
-        {isContestAssetsOpen && (
-          <ContestAssetsModal onClose={() => setIsContestAssetsOpen(false)} />
-        )}
+        <ContestSubmitPage onBackToChat={() => navigateTo('/')} />
       </>
     );
   }
@@ -311,7 +305,6 @@ export default function App() {
           onSettingsOpen={() => setIsSettingsOpen(true)}
           onContestAssetsOpen={() => setIsContestAssetsOpen(true)}
           onSubmitOpen={() => navigateTo('/submit')}
-          onReviewOpen={() => navigateTo('/review')}
           onRenameSession={handleRenameSession}
           onDeleteSession={handleDeleteSession}
           usage={usage}

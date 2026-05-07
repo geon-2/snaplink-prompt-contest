@@ -1,14 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { fetchContestAssets, fetchContestMe, submitContestPrompts } from '../../services/api';
-import type { ContestAssetsResponse, ContestMe, ContestSubmission } from '../../types';
+import { useCallback, useEffect, useState } from 'react';
+import { fetchContestMe, submitContestPrompts } from '../../services/api';
+import type { ContestMe, ContestSubmission } from '../../types';
 
 interface ContestSubmitPageProps {
   onBackToChat: () => void;
-  onOpenAssets: () => void;
-}
-
-function emptyAssets(): ContestAssetsResponse {
-  return { reference_images: [], before_images: [] };
 }
 
 function formatSubmittedAt(value?: string | null): string {
@@ -101,9 +96,8 @@ function SubmittedSummary({ submission }: { submission: ContestSubmission }) {
   );
 }
 
-export default function ContestSubmitPage({ onBackToChat, onOpenAssets }: ContestSubmitPageProps) {
+export default function ContestSubmitPage({ onBackToChat }: ContestSubmitPageProps) {
   const [me, setMe] = useState<ContestMe | null>(null);
-  const [assets, setAssets] = useState<ContestAssetsResponse>(emptyAssets);
   const [promptA, setPromptA] = useState('');
   const [promptB, setPromptB] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -114,20 +108,12 @@ export default function ContestSubmitPage({ onBackToChat, onOpenAssets }: Contes
   const submitted = Boolean(me?.submitted && me.submission);
   const canSubmit = promptA.trim().length > 0 && !submitted && !isSubmitting;
 
-  const generationTargetText = useMemo(() => {
-    const beforeCount = assets.before_images.length;
-    const promptCount = promptB.trim() ? 2 : 1;
-    if (beforeCount === 0) return '등록된 Before 이미지가 없습니다.';
-    return `${beforeCount}개 Before 이미지 x ${promptCount}개 프롬프트`;
-  }, [assets.before_images.length, promptB]);
-
   const loadPage = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [meData, assetsData] = await Promise.all([fetchContestMe(), fetchContestAssets()]);
+      const meData = await fetchContestMe();
       setMe(meData);
-      setAssets(assetsData);
       setPromptA(meData.submission?.prompt_a ?? '');
       setPromptB(meData.submission?.prompt_b ?? '');
     } catch (err) {
@@ -181,13 +167,6 @@ export default function ContestSubmitPage({ onBackToChat, onOpenAssets }: Contes
             <div className="text-[11px] font-bold text-text-tertiary truncate">{me?.team_name ?? '팀 확인 중'}</div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onOpenAssets}
-          className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-[12px] font-black text-text-secondary hover:text-accent-pro hover:border-accent-pro/30 transition-all"
-        >
-          대회 이미지
-        </button>
       </header>
 
       <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8">
@@ -209,7 +188,9 @@ export default function ContestSubmitPage({ onBackToChat, onOpenAssets }: Contes
                   <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-4">
                     <div>
                       <h2 className="text-[14px] font-black text-text-primary">답안 입력</h2>
-                      <div className="text-[11px] font-bold text-text-tertiary mt-1">{generationTargetText}</div>
+                      <div className="text-[11px] font-bold text-text-tertiary mt-1">
+                        제출 시 등록된 Before 이미지 전체에 대한 after 생성이 요청됩니다.
+                      </div>
                     </div>
                     <div className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-black text-text-tertiary">
                       Prompt B 선택
@@ -255,35 +236,6 @@ export default function ContestSubmitPage({ onBackToChat, onOpenAssets }: Contes
                   </div>
                 </div>
               )}
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="bg-white border border-slate-200 rounded-lg p-4">
-                  <div className="text-[12px] font-black text-text-primary mb-3">A컷 레퍼런스</div>
-                  <div className="grid grid-cols-4 gap-2">
-                    {assets.reference_images.slice(0, 8).map((asset) => (
-                      <img key={asset.id} src={asset.url} alt={asset.title} className="aspect-square rounded-lg object-cover bg-slate-100 border border-slate-200" />
-                    ))}
-                    {assets.reference_images.length === 0 && (
-                      <div className="col-span-4 h-20 rounded-lg border border-dashed border-slate-200 bg-slate-50 flex items-center justify-center text-[11px] font-bold text-text-tertiary">
-                        등록된 이미지 없음
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="bg-white border border-slate-200 rounded-lg p-4">
-                  <div className="text-[12px] font-black text-text-primary mb-3">Before 이미지</div>
-                  <div className="grid grid-cols-4 gap-2">
-                    {assets.before_images.slice(0, 8).map((asset) => (
-                      <img key={asset.id} src={asset.url} alt={asset.title} className="aspect-square rounded-lg object-cover bg-slate-100 border border-slate-200" />
-                    ))}
-                    {assets.before_images.length === 0 && (
-                      <div className="col-span-4 h-20 rounded-lg border border-dashed border-slate-200 bg-slate-50 flex items-center justify-center text-[11px] font-bold text-text-tertiary">
-                        등록된 이미지 없음
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
             </>
           )}
         </div>
