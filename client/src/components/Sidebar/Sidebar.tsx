@@ -27,6 +27,9 @@ interface SidebarProps {
   onFlashSessionSelect: (chatId: string | null) => void;
   onToggle: () => void;
   onSettingsOpen: () => void;
+  onContestAssetsOpen: () => void;
+  onSubmitOpen: () => void;
+  onReviewOpen: () => void;
   onRenameSession: (chatId: string, newTitle: string) => void;
   onDeleteSession: (chatId: string) => void;
   usage?: UsageInfo;
@@ -274,6 +277,9 @@ export default function Sidebar({
   onFlashSessionSelect,
   onToggle,
   onSettingsOpen,
+  onContestAssetsOpen,
+  onSubmitOpen,
+  onReviewOpen,
   onRenameSession,
   onDeleteSession,
   usage,
@@ -352,6 +358,47 @@ export default function Sidebar({
         </div>
         <div className="mt-2.5 text-[10px] text-text-tertiary leading-relaxed font-bold opacity-70">
           {usagePercent > 80 ? '⚠️ 예산이 얼마 남지 않았습니다.' : '대회 참여를 위한 사용량이 집계 중입니다.'}
+        </div>
+      </div>
+
+      <div className="px-4 py-4 border-b border-border-subtle shrink-0 space-y-2">
+        <button
+          type="button"
+          onClick={onSubmitOpen}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-accent-pro text-white hover:bg-accent-pro/90 transition-all"
+        >
+          <span className="w-5 h-5 rounded-md bg-white/15 flex items-center justify-center shrink-0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+          </span>
+          <span className="text-[12px] font-black">최종 프롬프트 제출</span>
+        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onContestAssetsOpen}
+            className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-[12px] font-black text-text-secondary hover:text-accent-pro hover:border-accent-pro/30 transition-all"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+            이미지
+          </button>
+          <button
+            type="button"
+            onClick={onReviewOpen}
+            className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-[12px] font-black text-text-secondary hover:text-accent-pro hover:border-accent-pro/30 transition-all"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+              <path d="M3 3v18h18" />
+              <path d="m19 9-5 5-4-4-3 3" />
+            </svg>
+            심사
+          </button>
         </div>
       </div>
 

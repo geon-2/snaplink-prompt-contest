@@ -1,0 +1,301 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { fetchContestAssets, fetchContestMe, submitContestPrompts } from '../../services/api';
+import type { ContestAssetsResponse, ContestMe, ContestSubmission } from '../../types';
+
+interface ContestSubmitPageProps {
+  onBackToChat: () => void;
+  onOpenAssets: () => void;
+}
+
+function emptyAssets(): ContestAssetsResponse {
+  return { reference_images: [], before_images: [] };
+}
+
+function formatSubmittedAt(value?: string | null): string {
+  if (!value) return '';
+  return new Date(value).toLocaleString('ko-KR', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function ConfirmSubmitModal({
+  isSubmitting,
+  onCancel,
+  onConfirm,
+}: {
+  isSubmitting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[9500] flex items-center justify-center bg-black/40 backdrop-blur-[3px] p-4 animate-fadeIn">
+      <div className="w-full max-w-[400px] bg-white rounded-lg shadow-2xl border border-slate-200 p-6">
+        <div className="w-11 h-11 rounded-lg bg-red-50 text-red-500 flex items-center justify-center mb-4">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </div>
+        <h3 className="text-[16px] font-black text-text-primary mb-2">최종 제출</h3>
+        <p className="text-[13px] font-bold text-text-secondary leading-relaxed">
+          제출 후에는 답안을 수정할 수 없습니다.
+        </p>
+        <div className="flex gap-2.5 mt-6">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isSubmitting}
+            className="flex-1 h-10 rounded-lg bg-slate-100 text-text-secondary text-[13px] font-black hover:bg-slate-200 transition-all disabled:opacity-50"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isSubmitting}
+            className="flex-1 h-10 rounded-lg bg-accent-pro text-white text-[13px] font-black hover:bg-accent-pro/90 transition-all disabled:opacity-50"
+          >
+            {isSubmitting ? '제출 중...' : '제출'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubmittedSummary({ submission }: { submission: ContestSubmission }) {
+  const promptB = submission.prompt_b?.trim();
+  const successCount = submission.results.filter((result) => result.status === 'succeeded').length;
+
+  return (
+    <div className="rounded-lg border border-accent-pro/20 bg-accent-pro/[0.04] p-5">
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div>
+          <div className="text-[13px] font-black text-accent-pro">제출 완료</div>
+          {submission.submitted_at && (
+            <div className="text-[11px] font-bold text-text-tertiary mt-1">{formatSubmittedAt(submission.submitted_at)}</div>
+          )}
+        </div>
+        <div className="px-3 py-1.5 rounded-lg bg-white border border-accent-pro/15 text-[11px] font-black text-accent-pro">
+          결과 {successCount}/{submission.results.length}
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="bg-white border border-slate-200 rounded-lg p-4">
+          <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider mb-2">Prompt A</div>
+          <div className="text-[13px] font-bold text-text-primary leading-relaxed whitespace-pre-wrap">{submission.prompt_a}</div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-lg p-4">
+          <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider mb-2">Prompt B</div>
+          <div className="text-[13px] font-bold text-text-primary leading-relaxed whitespace-pre-wrap">
+            {promptB || '미제출'}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function ContestSubmitPage({ onBackToChat, onOpenAssets }: ContestSubmitPageProps) {
+  const [me, setMe] = useState<ContestMe | null>(null);
+  const [assets, setAssets] = useState<ContestAssetsResponse>(emptyAssets);
+  const [promptA, setPromptA] = useState('');
+  const [promptB, setPromptB] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submitted = Boolean(me?.submitted && me.submission);
+  const canSubmit = promptA.trim().length > 0 && !submitted && !isSubmitting;
+
+  const generationTargetText = useMemo(() => {
+    const beforeCount = assets.before_images.length;
+    const promptCount = promptB.trim() ? 2 : 1;
+    if (beforeCount === 0) return '등록된 Before 이미지가 없습니다.';
+    return `${beforeCount}개 Before 이미지 x ${promptCount}개 프롬프트`;
+  }, [assets.before_images.length, promptB]);
+
+  const loadPage = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const [meData, assetsData] = await Promise.all([fetchContestMe(), fetchContestAssets()]);
+      setMe(meData);
+      setAssets(assetsData);
+      setPromptA(meData.submission?.prompt_a ?? '');
+      setPromptB(meData.submission?.prompt_b ?? '');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '제출 정보를 불러오지 못했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPage();
+  }, [loadPage]);
+
+  const handleSubmit = useCallback(async () => {
+    if (!canSubmit) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const submission = await submitContestPrompts(promptA.trim(), promptB.trim());
+      setMe({
+        team_id: submission.team_id,
+        team_name: submission.team_name,
+        submitted: true,
+        submission,
+      });
+      setShowConfirm(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '최종 프롬프트 제출에 실패했습니다.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [canSubmit, promptA, promptB]);
+
+  return (
+    <div className="h-screen w-screen bg-bg-primary text-text-primary overflow-hidden flex flex-col">
+      <header className="h-[64px] shrink-0 bg-white border-b border-border-default px-5 md:px-8 flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={onBackToChat}
+            className="w-9 h-9 flex items-center justify-center rounded-lg text-text-tertiary hover:text-text-primary hover:bg-slate-100 transition-all shrink-0"
+            title="채팅으로 돌아가기"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <path d="M19 12H5" />
+              <path d="M12 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-[16px] font-black text-text-primary truncate">최종 프롬프트 제출</h1>
+            <div className="text-[11px] font-bold text-text-tertiary truncate">{me?.team_name ?? '팀 확인 중'}</div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenAssets}
+          className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-[12px] font-black text-text-secondary hover:text-accent-pro hover:border-accent-pro/30 transition-all"
+        >
+          대회 이미지
+        </button>
+      </header>
+
+      <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8">
+        <div className="max-w-[980px] mx-auto space-y-5">
+          {isLoading ? (
+            <div className="h-64 flex items-center justify-center text-[13px] font-bold text-text-tertiary">제출 정보를 불러오는 중...</div>
+          ) : (
+            <>
+              {error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[12px] font-bold text-red-600">
+                  {error}
+                </div>
+              )}
+
+              {me?.submission && submitted ? (
+                <SubmittedSummary submission={me.submission} />
+              ) : (
+                <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-[14px] font-black text-text-primary">답안 입력</h2>
+                      <div className="text-[11px] font-bold text-text-tertiary mt-1">{generationTargetText}</div>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-black text-text-tertiary">
+                      Prompt B 선택
+                    </div>
+                  </div>
+
+                  <div className="p-5 space-y-5">
+                    <label className="block">
+                      <div className="text-[12px] font-black text-text-secondary mb-2">Prompt A</div>
+                      <textarea
+                        value={promptA}
+                        onChange={(event) => setPromptA(event.target.value)}
+                        disabled={submitted || isSubmitting}
+                        className="w-full min-h-[180px] resize-y rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] font-bold text-text-primary leading-relaxed outline-none focus:bg-white focus:border-accent-pro/50 focus:ring-4 focus:ring-accent-pro/10 transition-all disabled:opacity-60"
+                        placeholder="최종 프롬프트 A를 입력하세요."
+                      />
+                    </label>
+
+                    <label className="block">
+                      <div className="text-[12px] font-black text-text-secondary mb-2">Prompt B</div>
+                      <textarea
+                        value={promptB}
+                        onChange={(event) => setPromptB(event.target.value)}
+                        disabled={submitted || isSubmitting}
+                        className="w-full min-h-[180px] resize-y rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] font-bold text-text-primary leading-relaxed outline-none focus:bg-white focus:border-accent-pro/50 focus:ring-4 focus:ring-accent-pro/10 transition-all disabled:opacity-60"
+                        placeholder="최종 프롬프트 B를 입력하세요."
+                      />
+                    </label>
+
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
+                      <div className="text-[12px] font-bold text-text-tertiary">
+                        제출 시 등록된 Before 이미지 전체에 대한 after 생성이 요청됩니다.
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!canSubmit}
+                        onClick={() => setShowConfirm(true)}
+                        className="h-11 px-5 rounded-lg bg-accent-pro text-white text-[13px] font-black shadow-lg shadow-accent-pro/15 hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                      >
+                        {isSubmitting ? '생성 요청 중...' : '제출하기'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="bg-white border border-slate-200 rounded-lg p-4">
+                  <div className="text-[12px] font-black text-text-primary mb-3">A컷 레퍼런스</div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {assets.reference_images.slice(0, 8).map((asset) => (
+                      <img key={asset.id} src={asset.url} alt={asset.title} className="aspect-square rounded-lg object-cover bg-slate-100 border border-slate-200" />
+                    ))}
+                    {assets.reference_images.length === 0 && (
+                      <div className="col-span-4 h-20 rounded-lg border border-dashed border-slate-200 bg-slate-50 flex items-center justify-center text-[11px] font-bold text-text-tertiary">
+                        등록된 이미지 없음
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-lg p-4">
+                  <div className="text-[12px] font-black text-text-primary mb-3">Before 이미지</div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {assets.before_images.slice(0, 8).map((asset) => (
+                      <img key={asset.id} src={asset.url} alt={asset.title} className="aspect-square rounded-lg object-cover bg-slate-100 border border-slate-200" />
+                    ))}
+                    {assets.before_images.length === 0 && (
+                      <div className="col-span-4 h-20 rounded-lg border border-dashed border-slate-200 bg-slate-50 flex items-center justify-center text-[11px] font-bold text-text-tertiary">
+                        등록된 이미지 없음
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </main>
+
+      {showConfirm && (
+        <ConfirmSubmitModal
+          isSubmitting={isSubmitting}
+          onCancel={() => setShowConfirm(false)}
+          onConfirm={handleSubmit}
+        />
+      )}
+    </div>
+  );
+}

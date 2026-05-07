@@ -32,6 +32,7 @@ export type SSEEvent =
   | { type: 'meta'; data: SSEMetaEvent }
   | { type: 'text_delta'; data: SSETextDeltaEvent }
   | { type: 'image'; data: SSEImageEvent }
+  | { type: 'startup_timeout'; data: SSEErrorEvent }
   | { type: 'done' }
   | { type: 'error'; data: SSEErrorEvent };
 
@@ -128,4 +129,62 @@ export interface ChatCompletionParams {
 export interface UsageInfo {
   used: number;    // 사용 금액 ($)
   budget: number;  // 할당 예산 ($)
+}
+
+// ─── 대회 제출/심사 타입 ───
+
+export type ContestPromptSlot = 'A' | 'B';
+
+export type ContestSubmissionStatus = 'not_submitted' | 'generating' | 'submitted' | 'failed';
+
+export type ContestResultStatus = 'pending' | 'generating' | 'succeeded' | 'failed';
+
+export interface ContestImageAsset {
+  id: string;
+  title: string;
+  url: string;
+  s3_key?: string | null;
+  file_name?: string | null;
+  mime_type?: string | null;
+  created_at?: string | null;
+}
+
+export interface ContestAssetsResponse {
+  reference_images: ContestImageAsset[];
+  before_images: ContestImageAsset[];
+}
+
+export interface ContestGeneratedResult {
+  id: string;
+  prompt_slot: ContestPromptSlot;
+  before_image: ContestImageAsset;
+  after_image?: ContestImageAsset | null;
+  status: ContestResultStatus;
+  error_message?: string | null;
+}
+
+export interface ContestSubmission {
+  id: string;
+  team_id: string;
+  team_name: string;
+  prompt_a: string;
+  prompt_b?: string | null;
+  status: ContestSubmissionStatus;
+  submitted_at?: string | null;
+  results: ContestGeneratedResult[];
+}
+
+export interface ContestMe {
+  team_id: string;
+  team_name: string;
+  submitted: boolean;
+  submission?: ContestSubmission | null;
+}
+
+export interface ContestTeamSummary {
+  team_id: string;
+  team_name: string;
+  submitted: boolean;
+  submitted_at?: string | null;
+  result_count?: number | null;
 }

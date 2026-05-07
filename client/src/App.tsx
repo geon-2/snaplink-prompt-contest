@@ -3,6 +3,9 @@ import Sidebar from './components/Sidebar/Sidebar';
 import ChatPanel from './components/ChatPanel/ChatPanel';
 import LoginPage from './components/Login/LoginPage';
 import SettingsModal from './components/Settings/SettingsModal';
+import ContestAssetsModal from './components/Contest/ContestAssetsModal';
+import ContestReviewPage from './components/Contest/ContestReviewPage';
+import ContestSubmitPage from './components/Contest/ContestSubmitPage';
 import { useChat } from './hooks/useChat';
 import { fetchChats, fetchUsage, renameChat, deleteChat, UnauthorizedError } from './services/api';
 import { getUserUuid, isAuthenticated, logout } from './services/auth';
@@ -14,27 +17,14 @@ function sortByRecent(items: ChatListItem[]): ChatListItem[] {
   );
 }
 
-const CHAT_TYPE_KEY = 'pa_chat_types';
-
-function getChatTypeMap(): Record<string, 'chat' | 'image'> {
-  try { return JSON.parse(localStorage.getItem(CHAT_TYPE_KEY) ?? '{}'); } catch { return {}; }
-}
-
-function recordChatType(chatId: string, type: 'chat' | 'image') {
-  const map = getChatTypeMap();
-  map[chatId] = type;
-  localStorage.setItem(CHAT_TYPE_KEY, JSON.stringify(map));
-}
-
-function clearChatTypeMap() {
-  localStorage.removeItem(CHAT_TYPE_KEY);
-}
 
 export default function App() {
+  const [routePath, setRoutePath] = useState(() => window.location.pathname);
   const [isReady, setIsReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [usage, setUsage] = useState<UsageInfo>();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isContestAssetsOpen, setIsContestAssetsOpen] = useState(false);
 
   const [proSessions, setProSessions] = useState<ChatListItem[]>([]);
   const [flashSessions, setFlashSessions] = useState<ChatListItem[]>([]);
@@ -51,16 +41,21 @@ export default function App() {
 
   const [isBudgetExceeded, setIsBudgetExceeded] = useState(false);
 
+  const currentRoute = routePath === '/submit' ? 'submit' : routePath === '/review' ? 'review' : 'chat';
+
+  const navigateTo = useCallback((path: string) => {
+    window.history.pushState(null, '', path);
+    setRoutePath(window.location.pathname);
+  }, []);
+
   const proChat = useChat('chat', (id) => {
     setActiveProChatId(id);
-    recordChatType(id, 'chat');
     refreshData();
   }, () => {
     refreshData();
   }, () => setIsBudgetExceeded(true));
   const flashChat = useChat('image', (id) => {
     setActiveFlashChatId(id);
-    recordChatType(id, 'image');
     refreshData();
   }, () => {
     refreshData();
@@ -74,9 +69,8 @@ export default function App() {
           const uuid = getUserUuid();
           if (uuid) {
             const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-            const typeMap = getChatTypeMap();
-            setProSessions(sortByRecent(chats.filter((c) => (typeMap[c.chat_id] ?? c.last_message_type) === 'chat')));
-            setFlashSessions(sortByRecent(chats.filter((c) => (typeMap[c.chat_id] ?? c.last_message_type) === 'image')));
+            setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
+            setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
             setUsage(usageData);
             setIsLoggedIn(true);
           }
@@ -95,6 +89,12 @@ export default function App() {
     init();
   }, []);
 
+  useEffect(() => {
+    const handlePopState = () => setRoutePath(window.location.pathname);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const handleLogout = useCallback(() => {
     setIsLoggedIn(false);
     setProSessions([]);
@@ -105,10 +105,11 @@ export default function App() {
     setIsProPanelOpen(false);
     setIsFlashPanelOpen(false);
     setIsSettingsOpen(false);
+    setIsContestAssetsOpen(false);
+    navigateTo('/');
     proChat.clearMessages();
     flashChat.clearMessages();
-    clearChatTypeMap();
-  }, [proChat, flashChat]);
+  }, [navigateTo, proChat, flashChat]);
 
   const handleLoginSuccess = useCallback(async () => {
     setIsLoggedIn(true);
@@ -116,9 +117,8 @@ export default function App() {
     if (uuid) {
       try {
         const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-        const typeMap = getChatTypeMap();
-        setProSessions(sortByRecent(chats.filter((c) => (typeMap[c.chat_id] ?? c.last_message_type) === 'chat')));
-        setFlashSessions(sortByRecent(chats.filter((c) => (typeMap[c.chat_id] ?? c.last_message_type) === 'image')));
+        setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
+        setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
         setUsage(usageData);
       } catch (err) {
         if (err instanceof UnauthorizedError) {
@@ -134,9 +134,8 @@ export default function App() {
     if (!uuid) return;
     try {
       const [chats, usageData] = await Promise.all([fetchChats(uuid), fetchUsage(uuid)]);
-      const typeMap = getChatTypeMap();
-      setProSessions(sortByRecent(chats.filter((c) => (typeMap[c.chat_id] ?? c.last_message_type) === 'chat')));
-      setFlashSessions(sortByRecent(chats.filter((c) => (typeMap[c.chat_id] ?? c.last_message_type) === 'image')));
+      setProSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'chat')));
+      setFlashSessions(sortByRecent(chats.filter((c) => c.last_message_type === 'image')));
       setUsage(usageData);
     } catch { /* ignore */ }
   }, []);
@@ -264,8 +263,26 @@ export default function App() {
     );
   }
 
+  if (currentRoute === 'review') {
+    return <ContestReviewPage onBackToChat={() => navigateTo('/')} />;
+  }
+
   if (!isLoggedIn) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  if (currentRoute === 'submit') {
+    return (
+      <>
+        <ContestSubmitPage
+          onBackToChat={() => navigateTo('/')}
+          onOpenAssets={() => setIsContestAssetsOpen(true)}
+        />
+        {isContestAssetsOpen && (
+          <ContestAssetsModal onClose={() => setIsContestAssetsOpen(false)} />
+        )}
+      </>
+    );
   }
 
   const noneOpen = !isProPanelOpen && !isFlashPanelOpen;
@@ -292,6 +309,9 @@ export default function App() {
           onFlashSessionSelect={handleFlashSessionSelect}
           onToggle={() => setIsSidebarOpen(false)}
           onSettingsOpen={() => setIsSettingsOpen(true)}
+          onContestAssetsOpen={() => setIsContestAssetsOpen(true)}
+          onSubmitOpen={() => navigateTo('/submit')}
+          onReviewOpen={() => navigateTo('/review')}
           onRenameSession={handleRenameSession}
           onDeleteSession={handleDeleteSession}
           usage={usage}
@@ -412,6 +432,10 @@ export default function App() {
             </svg>
           </button>
         </div>
+      )}
+
+      {isContestAssetsOpen && (
+        <ContestAssetsModal onClose={() => setIsContestAssetsOpen(false)} />
       )}
     </div>
   );

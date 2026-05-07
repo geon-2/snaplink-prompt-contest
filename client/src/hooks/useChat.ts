@@ -7,7 +7,10 @@ import type { Message, ChatType, ApiMessage, ChatDetailResponse, ChatListItem } 
 const RECOVERY_POLL_INTERVAL_MS = 2000;
 const RECOVERY_MAX_POLLS = 150; // 5분
 const RECOVERY_SESSION_GRACE_MS = 10000;
-const STARTUP_TIMEOUT_RECOVERY_MESSAGE = '이미지 생성이 계속 진행 중입니다. 완료되면 자동으로 표시됩니다.';
+const STARTUP_TIMEOUT_RECOVERY_MESSAGE_BY_TYPE: Record<ChatType, string> = {
+  chat: '답변 생성이 계속 진행 중입니다. 완료되면 자동으로 표시됩니다.',
+  image: '이미지 생성이 계속 진행 중입니다. 완료되면 자동으로 표시됩니다.',
+};
 const RECOVERY_EXPIRED_MESSAGE = '아직 완료되지 않았습니다. 잠시 후 새로고침하거나 세션을 다시 열어 확인해주세요.';
 
 /**
@@ -47,12 +50,13 @@ function getSessionTimeMs(session: ChatListItem): number {
 function findRecoverySession(
   sessions: ChatListItem[],
   prompt: string,
-  requestStartedAtMs: number
+  requestStartedAtMs: number,
+  expectedType: ChatType
 ): ChatListItem | null {
   const promptPreview = normalizePreview(prompt);
   const earliestAcceptedTime = requestStartedAtMs - RECOVERY_SESSION_GRACE_MS;
   const candidates = sessions
-    .filter((session) => session.last_message_type === 'image')
+    .filter((session) => session.last_message_type === expectedType)
     .filter((session) => getSessionTimeMs(session) >= earliestAcceptedTime)
     .sort((a, b) => getSessionTimeMs(b) - getSessionTimeMs(a));
 
@@ -188,7 +192,7 @@ export function useChat(
         activeStreams.current.set(streamChatId, activeMsg);
       }
 
-      const startImageRecoveryPoll = (initialChatId: string | null) => {
+      const startRecoveryPoll = (initialChatId: string | null) => {
         let targetChatId = initialChatId;
         let pollInFlight = false;
         const pollRunId = ++pollRunIdRef.current;
@@ -236,7 +240,7 @@ export function useChat(
             if (!targetChatId) {
               const sessions = await fetchChats(uuid);
               if (pollRunIdRef.current !== pollRunId) return;
-              const recoveredSession = findRecoverySession(sessions, prompt, requestStartedAtMs);
+              const recoveredSession = findRecoverySession(sessions, prompt, requestStartedAtMs, type);
               if (!recoveredSession) return;
 
               targetChatId = recoveredSession.chat_id;
@@ -339,15 +343,15 @@ export function useChat(
             keepLoadingAfterRequest = true;
             updateActiveMessage((msg) => ({
               ...msg,
-              content: STARTUP_TIMEOUT_RECOVERY_MESSAGE,
-              isStreaming: false,
-              isGenerating: true,
+              content: STARTUP_TIMEOUT_RECOVERY_MESSAGE_BY_TYPE[type],
+              isStreaming: type === 'chat',
+              isGenerating: type === 'image',
               isError: false,
             }));
             if (streamChatId) {
               activeStreams.current.delete(streamChatId);
             }
-            startImageRecoveryPoll(streamChatId);
+            startRecoveryPoll(streamChatId);
           },
         });
       } catch (error: unknown) {
@@ -368,7 +372,7 @@ export function useChat(
         abortControllerRef.current = null;
       }
     },
-    [isLoading, type, chatId, messages, cancelPoll, onNewChatCreated, onChatUpdated]
+    [isLoading, type, chatId, messages, cancelPoll, onNewChatCreated, onChatUpdated, onBudgetExceeded]
   );
 
   /**
