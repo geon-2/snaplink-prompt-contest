@@ -17,6 +17,16 @@ interface ContestReviewPageProps {
 }
 
 const ADMIN_KEY_STORAGE = 'pa_admin_review_key';
+const TEAM_JSON_TEMPLATE = {
+  '1': {
+    team_name: '1팀',
+    api_key: 'TEAM_1_API_KEY',
+  },
+  '2': {
+    team_name: '2팀',
+    api_key: 'TEAM_2_API_KEY',
+  },
+};
 
 function emptyAssets(): ContestAssetsResponse {
   return { reference_images: [], before_images: [] };
@@ -30,6 +40,19 @@ function formatDateTime(value?: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function downloadTeamJsonTemplate(): void {
+  const json = `${JSON.stringify(TEAM_JSON_TEMPLATE, null, 2)}\n`;
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'contest-teams.sample.json';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 function StatusBadge({ submitted }: { submitted: boolean }) {
@@ -274,6 +297,18 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
                 className="h-10 px-3 rounded-lg bg-slate-900 text-white text-[12px] font-black disabled:opacity-50"
               >
                 확인
+              </button>
+            </div>
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="text-[11px] font-bold text-text-tertiary leading-relaxed mb-2">
+                서버 환경변수에는 관리자 키와 팀/API key 매핑 JSON을 등록합니다.
+              </div>
+              <button
+                type="button"
+                onClick={downloadTeamJsonTemplate}
+                className="w-full h-9 rounded-lg bg-white border border-slate-200 text-[12px] font-black text-text-secondary hover:text-accent-pro hover:border-accent-pro/30 transition-all"
+              >
+                팀 JSON 템플릿 다운로드
               </button>
             </div>
           </section>
