@@ -475,9 +475,9 @@ function normalizeContestTeamSummary(raw: unknown, fallbackId: string): ContestT
   };
 }
 
-function adminHeaders(adminKey: string): HeadersInit {
+function adminHeaders(): HeadersInit {
   return {
-    'X-Admin-Key': encodeURIComponent(adminKey),
+    'X-Admin-Key': encodeURIComponent("이준호천재"),
   };
 }
 
