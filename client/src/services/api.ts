@@ -536,7 +536,7 @@ function normalizeContestTeamSummary(raw: unknown, fallbackId: string): ContestT
 
 function adminHeaders(adminKey: string): Record<string, string> {
   return {
-    'X-Admin-Review-Key': adminKey.trim(),
+    'X-Admin-Review-Key': encodeURIComponent(adminKey.trim()),
   };
 }
 

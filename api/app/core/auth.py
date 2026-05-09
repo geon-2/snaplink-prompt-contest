@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from secrets import compare_digest
+from urllib.parse import unquote
 from uuid import UUID
 
 from fastapi import HTTPException, Request, Response, status
@@ -79,7 +80,12 @@ def validate_admin_key(request: Request, settings: Settings) -> None:
     key = request.headers.get("X-Admin-Review-Key", "")
     if not key or not settings.admin_review_key:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid admin key")
-    if not compare_digest(key.encode("utf-8"), settings.admin_review_key.encode("utf-8")):
+
+    decoded_key = unquote(key)
+    if not (
+        compare_digest(key.encode("utf-8"), settings.admin_review_key.encode("utf-8"))
+        or compare_digest(decoded_key.encode("utf-8"), settings.admin_review_key.encode("utf-8"))
+    ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid admin key")
 
 
