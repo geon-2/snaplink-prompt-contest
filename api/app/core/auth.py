@@ -75,5 +75,13 @@ def authenticate_session_from_cookies(
     return user
 
 
+def validate_admin_key(request: Request, settings: Settings) -> None:
+    key = request.headers.get("X-Admin-Review-Key", "")
+    if not key or not settings.admin_review_key:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid admin key")
+    if not compare_digest(key.encode("utf-8"), settings.admin_review_key.encode("utf-8")):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid admin key")
+
+
 def _compare_api_keys(expected: str, actual: str) -> bool:
     return compare_digest(expected.encode("utf-8"), actual.encode("utf-8"))
