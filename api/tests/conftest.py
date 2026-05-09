@@ -64,6 +64,7 @@ class FakeGeminiService:
         self.last_payload: dict[str, object] | None = None
         self.stream_exception: Exception | None = None
         self.generate_exception: Exception | None = None
+        self.skip_stream_open = False
         self.next_events: list[GeminiTextEvent | GeminiImageEvent | GeminiUsageEvent] = [
             GeminiTextEvent(text="hello from gemini"),
             GeminiUsageEvent(metadata=GeminiUsageMetadata(prompt_token_count=100, candidates_token_count=50)),
@@ -90,7 +91,7 @@ class FakeGeminiService:
         self.last_payload = payload
         if self.stream_exception is not None:
             raise self.stream_exception
-        if on_open is not None:
+        if on_open is not None and not self.skip_stream_open:
             on_open()
         yield from self.next_events
 

@@ -63,7 +63,7 @@ Success returns `201 Created` and sets `user_uuid` and `user_api_key` cookies. B
 - `text`: prompt text
 - `files[]`: optional image files
 
-Responses use `text/event-stream` with `meta`, `text_delta`, `image`, `done`, and `error` events.
+Responses use `text/event-stream` with `meta`, `text_delta`, `image`, `startup_timeout`, `done`, and `error` events.
 
 All user-uploaded images and AI-generated images are stored in AWS S3, and the API returns `s3_key` values instead of direct URLs.
 

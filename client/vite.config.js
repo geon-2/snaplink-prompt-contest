@@ -6,6 +6,15 @@ import process from 'node:process'
 export default defineConfig(() => {
   return {
     plugins: [react()],
+    server: {
+      proxy: {
+        '/api': {
+          target: process.env.API_BASE_URL || 'http://3.36.38.216:9000',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, ''),
+        },
+      },
+    },
     define: {
       'process.env.S3_BUCKET': JSON.stringify(process.env.S3_BUCKET || ''),
       'process.env.AWS_REGION': JSON.stringify(process.env.AWS_REGION || ''),

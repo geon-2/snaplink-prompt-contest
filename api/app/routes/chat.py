@@ -12,6 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
+from time import monotonic
 from uuid import UUID, uuid4
 
 import httpx
@@ -63,6 +64,7 @@ router = APIRouter(tags=["chat"])
 IMAGE_PREVIEW_TEXT = "[image]"
 THOUGHT_SIGNATURE_FALLBACK = "skip_thought_signature_validator"
 SSE_HEARTBEAT_INTERVAL_SECONDS = 15
+GEMINI_STARTUP_TIMEOUT_SECONDS = 30
 
 
 @dataclass(slots=True)
@@ -356,26 +358,41 @@ def chat_completion(
     worker = Thread(target=process_request, name=f"chat-completion-{uuid4()}")
     worker.start()
 
-    try:
-        startup_result = startup_queue.get(timeout=30)
-    except Empty as exc:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="gemini startup timed out",
-        ) from exc
-
-    if not startup_result.ok:
-        raise HTTPException(
-            status_code=startup_result.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=startup_result.detail or "gemini request failed",
-        )
-
     def stream_events() -> object:
+        startup_resolved = False
+        startup_deadline = monotonic() + GEMINI_STARTUP_TIMEOUT_SECONDS
+        last_heartbeat_at = monotonic()
+
         while True:
+            if not startup_resolved:
+                try:
+                    startup_result = startup_queue.get_nowait()
+                except Empty:
+                    if monotonic() >= startup_deadline:
+                        yield _sse_event("startup_timeout", {"detail": "gemini startup timed out"})
+                        break
+                else:
+                    startup_resolved = True
+                    if not startup_result.ok:
+                        yield _sse_event(
+                            "error",
+                            {
+                                "detail": startup_result.detail or "gemini request failed",
+                                "status_code": startup_result.status_code
+                                or status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            },
+                        )
+                        break
+
             try:
-                event = event_queue.get(timeout=SSE_HEARTBEAT_INTERVAL_SECONDS)
+                event = event_queue.get(
+                    timeout=1.0 if not startup_resolved else SSE_HEARTBEAT_INTERVAL_SECONDS
+                )
             except Empty:
-                yield ": keep-alive\n\n"
+                now = monotonic()
+                if now - last_heartbeat_at >= SSE_HEARTBEAT_INTERVAL_SECONDS:
+                    last_heartbeat_at = now
+                    yield ": keep-alive\n\n"
                 continue
             if event is None:
                 break

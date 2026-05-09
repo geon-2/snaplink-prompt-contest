@@ -12,6 +12,7 @@ from app.models.history import History
 from app.models.message import Message
 from app.models.user import User
 from app.models.usage_ledger import UsageLedger
+from app.routes import chat as chat_routes
 from app.services.gemini import (
     GeminiImageEvent,
     GeminiTextEvent,
@@ -149,13 +150,13 @@ def test_usage_snapshot_is_calculated_from_raw_usage_buckets(
     assert usage_response.json()["used_usd"] == "0.026000"
 
 
-def test_chat_completion_returns_http_error_when_gemini_startup_fails(
+def test_chat_completion_streams_error_when_gemini_startup_fails(
     client,
     fake_gemini_service,
 ) -> None:
     user_uuid = str(uuid4())
     signup_response = client.post("/signup", json={"uuid": user_uuid, "api_key": "user-api-key"})
-    assert signup_response.status_code == 201
+    assert signup_response.is_success
 
     request = httpx.Request("POST", "https://example.invalid")
     response = httpx.Response(400, request=request, text='{"error":{"message":"bad request"}}')
@@ -170,8 +171,32 @@ def test_chat_completion_returns_http_error_when_gemini_startup_fails(
         data={"uuid": user_uuid, "type": "chat", "text": "say hello"},
     )
 
-    assert completion_response.status_code == 400
-    assert "bad request" in completion_response.json()["detail"]
+    assert completion_response.status_code == 200
+    assert "event: error" in completion_response.text
+    assert "bad request" in completion_response.text
+
+
+def test_chat_completion_streams_startup_timeout(
+    client,
+    fake_gemini_service,
+    monkeypatch,
+) -> None:
+    user_uuid = str(uuid4())
+    signup_response = client.post("/signup", json={"uuid": user_uuid, "api_key": "user-api-key"})
+    assert signup_response.is_success
+
+    fake_gemini_service.skip_stream_open = True
+    fake_gemini_service.next_events = []
+    monkeypatch.setattr(chat_routes, "GEMINI_STARTUP_TIMEOUT_SECONDS", 0)
+
+    completion_response = client.post(
+        "/chat/completion",
+        data={"uuid": user_uuid, "type": "chat", "text": "say hello"},
+    )
+
+    assert completion_response.status_code == 200
+    assert "event: startup_timeout" in completion_response.text
+    assert "gemini startup timed out" in completion_response.text
 
 
 def test_image_completion_uploads_to_storage_and_returns_s3_keys(
