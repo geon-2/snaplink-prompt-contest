@@ -534,9 +534,20 @@ function normalizeContestTeamSummary(raw: unknown, fallbackId: string): ContestT
   };
 }
 
+function normalizeAdminKeyInput(adminKey: string): string {
+  const trimmed = adminKey.trim();
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+  if (trimmed.length >= 2 && ((first === '"' && last === '"') || (first === "'" && last === "'"))) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
 function adminHeaders(adminKey: string): Record<string, string> {
+  const normalizedKey = normalizeAdminKeyInput(adminKey);
   return {
-    'X-Admin-Review-Key': encodeURIComponent(adminKey.trim()),
+    'X-Admin-Review-Key': /^[\x00-\xff]*$/.test(normalizedKey) ? normalizedKey : encodeURIComponent(normalizedKey),
   };
 }
 
@@ -821,6 +832,9 @@ function normalizeSharedImageAsset(raw: unknown, fallbackUrl: string): ContestAs
 async function readErrorDetail(response: Response, fallback: string): Promise<string> {
   const body = await response.json().catch(() => ({}));
   const detail = asRecord(body)?.detail;
+  if (response.status === 403 && detail === 'invalid admin key') {
+    return '관리자 키가 맞지 않습니다. 입력값과 백엔드 X-Admin-Review-Key 설정을 확인해주세요.';
+  }
   if (typeof detail === 'string' && detail.trim()) return detail;
   if (Array.isArray(detail) && detail.length > 0) {
     const message = stringValue(asRecord(detail[0])?.msg);
