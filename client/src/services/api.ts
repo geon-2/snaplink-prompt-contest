@@ -22,7 +22,7 @@ import type {
   ContestTeamSummary,
 } from '../types';
 
-const API_BASE = 'http://3.36.38.216:9000/api';
+const API_BASE = '/api';
 const ENABLE_API_DEBUG_LOGS = import.meta.env.DEV;
 
 function apiUrl(path: string): string {
