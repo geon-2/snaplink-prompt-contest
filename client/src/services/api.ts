@@ -477,7 +477,7 @@ function normalizeContestTeamSummary(raw: unknown, fallbackId: string): ContestT
 
 function adminHeaders(adminKey: string): HeadersInit {
   return {
-    'X-Admin-Review-Key': adminKey,
+    'X-Admin-Review-Key': encodeURIComponent(adminKey),
   };
 }
 
