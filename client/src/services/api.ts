@@ -22,7 +22,7 @@ import type {
   ContestTeamSummary,
 } from '../types';
 
-const API_BASE = '/api';
+const API_BASE = 'http://3.36.38.216:9000/api';
 const ENABLE_API_DEBUG_LOGS = import.meta.env.DEV;
 
 function apiUrl(path: string): string {
@@ -788,9 +788,10 @@ export async function fetchContestReviewTeam(teamId: string, adminKey: string): 
 /**
  * GET /api/admin/chats + /api/admin/chats/:chat_id — API key별 세션 로그 분석 데이터
  */
-export async function fetchContestAnalysisItems(): Promise<ContestAnalysisApiKeyItem[]> {
+export async function fetchContestAnalysisItems(adminKey: string): Promise<ContestAnalysisApiKeyItem[]> {
   const listResp = await fetch(apiUrl('/admin/chats'), {
     credentials: 'include',
+    headers: adminHeaders(adminKey),
   });
   if (!listResp.ok) throw new Error(`관리자 채팅 목록 로드 실패 (${listResp.status})`);
 
@@ -803,6 +804,7 @@ export async function fetchContestAnalysisItems(): Promise<ContestAnalysisApiKey
 
       const detailResp = await fetch(apiUrl(`/admin/chats/${encodeURIComponent(chatId)}`), {
         credentials: 'include',
+        headers: adminHeaders(adminKey),
       });
       if (!detailResp.ok) throw new Error(`관리자 채팅 상세 로드 실패 (${detailResp.status})`);
 
