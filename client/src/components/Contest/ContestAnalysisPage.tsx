@@ -238,7 +238,7 @@ function MarkdownText({ text, inverse = false }: { text: string; inverse?: boole
   );
 }
 
-function FilterButton<T extends string>({
+function FilterButton({
   active,
   label,
   onClick,

@@ -21,6 +21,7 @@ import type {
   ContestSubmissionStatus,
   ContestTeamSummary,
 } from '../types';
+import { getUserApiKey } from './auth';
 
 const API_BASE = '/api';
 const ENABLE_API_DEBUG_LOGS = import.meta.env.DEV;
@@ -38,12 +39,14 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-function booleanValue(value: unknown): boolean | undefined {
-  return typeof value === 'boolean' ? value : undefined;
+function idValue(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
 }
 
-function numberValue(value: unknown): number | undefined {
-  return typeof value === 'number' ? value : undefined;
+function booleanValue(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function numericValue(value: unknown): number | undefined {
@@ -418,7 +421,13 @@ function normalizeContestResultStatus(value: unknown): ContestResultStatus {
 
 function normalizeContestSubmissionStatus(value: unknown): ContestSubmissionStatus {
   const status = stringValue(value);
-  if (status === 'not_submitted' || status === 'generating' || status === 'failed' || status === 'submitted') {
+  if (
+    status === 'not_submitted' ||
+    status === 'generating' ||
+    status === 'failed' ||
+    status === 'submitted' ||
+    status === 'completed'
+  ) {
     return status;
   }
   return 'submitted';
@@ -426,7 +435,11 @@ function normalizeContestSubmissionStatus(value: unknown): ContestSubmissionStat
 
 function normalizeContestSubmission(raw: unknown): ContestSubmission {
   const record = asRecord(raw) ?? {};
-  const results = arrayValue(record.results).map((item, index) => {
+  const imageUrls = arrayValue(record.image_urls).map((item) => stringValue(item)).filter((item): item is string => Boolean(item));
+  const imageS3Keys = arrayValue(record.image_s3_keys).map((item) => stringValue(item)).filter((item): item is string => Boolean(item));
+  const existingResults = arrayValue(record.results);
+  const finalStatus = normalizeContestSubmissionStatus(record.status);
+  const results = existingResults.map((item, index) => {
     const result = asRecord(item) ?? {};
     return {
       id: stringValue(firstDefined(result.id, result.result_id)) ?? `result-${index + 1}`,
@@ -437,15 +450,58 @@ function normalizeContestSubmission(raw: unknown): ContestSubmission {
       error_message: stringValue(result.error_message) ?? null,
     };
   });
+  if (results.length === 0) {
+    const generatedCount = Math.max(imageUrls.length, imageS3Keys.length);
+    for (let index = 0; index < generatedCount; index += 1) {
+      const imageUrl = imageUrls[index];
+      const s3Key = imageS3Keys[index];
+      const status: ContestResultStatus =
+        finalStatus === 'failed'
+          ? 'failed'
+          : finalStatus === 'generating'
+            ? 'generating'
+            : imageUrl || s3Key || finalStatus === 'completed'
+              ? 'succeeded'
+              : 'pending';
 
+      results.push({
+        id: `${idValue(record.submission_id) ?? idValue(record.id) ?? 'submission'}-image-${index + 1}`,
+        prompt_slot: 'A',
+        before_image: {
+          id: `final-prompt-${index + 1}`,
+          title: '최종 프롬프트',
+          url: '',
+          s3_key: null,
+          file_name: null,
+          mime_type: null,
+          created_at: stringValue(firstDefined(record.created_at, record.updated_at)) ?? null,
+        },
+        after_image: {
+          id: `generated-image-${index + 1}`,
+          title: `생성 이미지 ${index + 1}`,
+          url: imageUrl ?? (s3Key ? `/api/images/${s3Key}` : ''),
+          s3_key: s3Key ?? null,
+          file_name: s3Key?.split('/').pop() ?? null,
+          mime_type: 'image/png',
+          created_at: stringValue(firstDefined(record.generated_at, record.updated_at, record.created_at)) ?? null,
+        },
+        status,
+        error_message: stringValue(record.error_detail) ?? null,
+      });
+    }
+  }
+
+  const submissionId = idValue(firstDefined(record.id, record.submission_id)) ?? 'submission';
+  const apiKeyHash = stringValue(record.api_key_hash);
+  const apiKeyPreview = stringValue(record.api_key_preview);
   return {
-    id: stringValue(firstDefined(record.id, record.submission_id)) ?? 'submission',
-    team_id: stringValue(record.team_id) ?? '',
-    team_name: stringValue(record.team_name) ?? '팀 정보 없음',
-    prompt_a: stringValue(record.prompt_a) ?? '',
+    id: submissionId,
+    team_id: stringValue(record.team_id) ?? apiKeyHash ?? submissionId,
+    team_name: stringValue(record.team_name) ?? (apiKeyPreview ? `API ${apiKeyPreview}` : '제출 정보'),
+    prompt_a: stringValue(firstDefined(record.prompt_a, record.prompt)) ?? '',
     prompt_b: stringValue(record.prompt_b) ?? null,
-    status: normalizeContestSubmissionStatus(record.status),
-    submitted_at: stringValue(record.submitted_at) ?? null,
+    status: finalStatus,
+    submitted_at: stringValue(firstDefined(record.submitted_at, record.created_at, record.updated_at)) ?? null,
     results,
   };
 }
@@ -464,22 +520,23 @@ function normalizeContestMe(raw: unknown): ContestMe {
 
 function normalizeContestTeamSummary(raw: unknown, fallbackId: string): ContestTeamSummary {
   const record = asRecord(raw) ?? {};
-  const teamId = stringValue(record.team_id) ?? fallbackId;
+  const submissionId = idValue(firstDefined(record.submission_id, record.id));
+  const teamId = stringValue(firstDefined(record.team_id, record.api_key_hash, submissionId)) ?? fallbackId;
+  const imageCount = arrayValue(record.image_urls).length || arrayValue(record.image_s3_keys).length;
+  const status = normalizeContestSubmissionStatus(record.status);
 
   return {
     team_id: teamId,
-    team_name: stringValue(record.team_name) ?? `${teamId}팀`,
-    submitted: booleanValue(record.submitted) ?? false,
-    submitted_at: stringValue(record.submitted_at) ?? null,
-    result_count: numberValue(record.result_count) ?? null,
+    team_name: stringValue(firstDefined(record.team_name, record.api_key_preview)) ?? `${teamId} 제출`,
+    submitted: booleanValue(record.submitted) ?? status !== 'not_submitted',
+    submitted_at: stringValue(firstDefined(record.submitted_at, record.created_at, record.updated_at)) ?? null,
+    result_count: numericValue(record.result_count) ?? imageCount,
   };
 }
 
-function adminHeaders(adminKey: string): HeadersInit {
-  console.log(adminKey)
-
+function adminHeaders(adminKey: string): Record<string, string> {
   return {
-    'X-Admin-Key': encodeURIComponent("이준호천재"),
+    'X-Admin-Review-Key': adminKey.trim(),
   };
 }
 
@@ -721,70 +778,197 @@ function normalizeAnalysisApiKeyItem(raw: unknown, index: number): ContestAnalys
   };
 }
 
+const FINAL_SUBMISSION_STORAGE = 'pa_final_submission';
+
+function emptyContestAssets(): ContestAssetsResponse {
+  return { reference_images: [], before_images: [] };
+}
+
+function getResponseFilename(response: Response, fallback: string): string {
+  const disposition = response.headers.get('content-disposition') ?? '';
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  const asciiMatch = disposition.match(/filename="?([^";]+)"?/i);
+  const rawName = utf8Match?.[1] ?? asciiMatch?.[1];
+  if (!rawName) return fallback;
+  try {
+    return decodeURIComponent(rawName);
+  } catch {
+    return rawName;
+  }
+}
+
+function normalizeSharedImageAsset(raw: unknown, fallbackUrl: string): ContestAssetsResponse {
+  const record = asRecord(raw) ?? {};
+  const downloadPath = stringValue(record.download_path) ?? '/shared-image';
+  const s3Key = stringValue(record.image_s3_key);
+  const url = stringValue(record.url) ?? (fallbackUrl || apiUrl(downloadPath));
+  const asset = normalizeContestAsset(
+    {
+      id: 'shared-image',
+      title: '공유 이미지',
+      url,
+      image_s3_key: s3Key,
+      file_name: s3Key?.split('/').pop() ?? 'shared-image',
+      mime_type: stringValue(record.content_type),
+      created_at: stringValue(record.created_at),
+    },
+    'shared-image',
+  );
+
+  return normalizeContestAssets({ reference_images: [asset], before_images: [] });
+}
+
+async function readErrorDetail(response: Response, fallback: string): Promise<string> {
+  const body = await response.json().catch(() => ({}));
+  const detail = asRecord(body)?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const message = stringValue(asRecord(detail[0])?.msg);
+    if (message) return message;
+  }
+  return `${fallback} (${response.status})`;
+}
+
+function readStoredFinalSubmission(): ContestSubmission | null {
+  const raw = localStorage.getItem(FINAL_SUBMISSION_STORAGE);
+  if (!raw) return null;
+  try {
+    return normalizeContestSubmission(JSON.parse(raw));
+  } catch {
+    localStorage.removeItem(FINAL_SUBMISSION_STORAGE);
+    return null;
+  }
+}
+
+function storeFinalSubmission(submission: ContestSubmission): void {
+  localStorage.setItem(FINAL_SUBMISSION_STORAGE, JSON.stringify(submission));
+}
+
 /**
- * GET /api/contest/me — 현재 API key에 매핑된 팀/제출 상태
+ * 서버에는 사용자별 최종 제출 조회 API가 없어서, 제출 직후 요약은 브라우저에 보관한다.
  */
 export async function fetchContestMe(): Promise<ContestMe> {
-  const resp = await fetch(`${API_BASE}/contest/me`, {
-    credentials: 'include',
+  const submission = readStoredFinalSubmission();
+  return normalizeContestMe({
+    team_id: submission?.team_id ?? '',
+    team_name: submission?.team_name ?? '내 제출',
+    submitted: Boolean(submission),
+    submission,
   });
-  if (!resp.ok) throw new Error(`대회 제출 상태 로드 실패 (${resp.status})`);
-  return normalizeContestMe(await resp.json());
 }
 
 /**
- * GET /api/contest/assets — 참가자에게 제공되는 A컷/Before 이미지
+ * GET /api/shared-image — 참가자에게 제공되는 관리자 공유 이미지
  */
 export async function fetchContestAssets(): Promise<ContestAssetsResponse> {
-  const resp = await fetch(`${API_BASE}/contest/assets`, {
+  const resp = await fetch(apiUrl('/shared-image'), {
     credentials: 'include',
   });
-  if (!resp.ok) throw new Error(`대회 이미지 로드 실패 (${resp.status})`);
-  return normalizeContestAssets(await resp.json());
+  if (resp.status === 401 || resp.status === 404) return emptyContestAssets();
+  if (!resp.ok) throw new Error(await readErrorDetail(resp, '대회 이미지 로드 실패'));
+
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const fileName = getResponseFilename(resp, 'shared-image');
+  return normalizeContestAssets({
+    reference_images: [
+      {
+        id: 'shared-image',
+        title: '공유 이미지',
+        url,
+        file_name: fileName,
+        mime_type: blob.type || resp.headers.get('content-type'),
+        created_at: new Date().toISOString(),
+      },
+    ],
+    before_images: [],
+  });
 }
 
 /**
- * POST /api/contest/submissions — 최종 프롬프트 제출 및 after 생성 요청
+ * POST /api/final-submissions — 최종 프롬프트 1회 제출
  */
-export async function submitContestPrompts(promptA: string, promptB?: string): Promise<ContestSubmission> {
-  const resp = await fetch(`${API_BASE}/contest/submissions`, {
+export async function submitContestPrompts(prompt: string, _promptB?: string): Promise<ContestSubmission> {
+  const apiKey = getUserApiKey();
+  if (!apiKey) throw new UnauthorizedError();
+
+  const resp = await fetch(apiUrl('/final-submissions'), {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt_a: promptA, prompt_b: promptB?.trim() || null }),
+    body: JSON.stringify({ api_key: apiKey, prompt }),
   });
   const body = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const detail = stringValue(asRecord(body)?.detail);
     throw new Error(detail || `최종 프롬프트 제출 실패 (${resp.status})`);
   }
-  return normalizeContestSubmission(body);
+
+  const submission = normalizeContestSubmission({
+    ...(asRecord(body) ?? {}),
+    prompt,
+    created_at: new Date().toISOString(),
+  });
+  storeFinalSubmission(submission);
+  return submission;
 }
 
 /**
- * GET /api/contest/review/teams — 심사용 팀 목록
+ * GET /api/admin/final-submissions — 관리자 제출 목록
  */
 export async function fetchContestReviewTeams(adminKey: string): Promise<ContestTeamSummary[]> {
-  const resp = await fetch(`${API_BASE}/contest/review/teams`, {
+  const resp = await fetch(apiUrl('/admin/final-submissions'), {
     credentials: 'include',
     headers: adminHeaders(adminKey),
   });
-  if (!resp.ok) throw new Error(`심사용 팀 목록 로드 실패 (${resp.status})`);
-  const body = await resp.json();
-  const items = arrayValue(asRecord(body)?.teams ?? body);
+  if (!resp.ok) throw new Error(await readErrorDetail(resp, '심사용 제출 목록 로드 실패'));
+  const items = arrayValue(await resp.json());
   return items.map((item, index) => normalizeContestTeamSummary(item, `${index + 1}`));
 }
 
 /**
- * GET /api/contest/review/teams/:teamId — 팀별 제출 상세
+ * 관리자 상세 API가 별도로 없어서 목록에서 선택 항목을 찾아 상세 형태로 변환한다.
  */
 export async function fetchContestReviewTeam(teamId: string, adminKey: string): Promise<ContestSubmission> {
-  const resp = await fetch(`${API_BASE}/contest/review/teams/${encodeURIComponent(teamId)}`, {
+  const resp = await fetch(apiUrl('/admin/final-submissions'), {
     credentials: 'include',
     headers: adminHeaders(adminKey),
   });
-  if (!resp.ok) throw new Error(`팀 제출 결과 로드 실패 (${resp.status})`);
-  return normalizeContestSubmission(await resp.json());
+  if (!resp.ok) throw new Error(await readErrorDetail(resp, '제출 상세 로드 실패'));
+  const items = arrayValue(await resp.json());
+  const item = items.find((candidate) => {
+    const record = asRecord(candidate) ?? {};
+    const ids = [
+      stringValue(record.api_key_hash),
+      idValue(record.submission_id),
+      idValue(record.id),
+      stringValue(record.api_key_preview),
+    ];
+    return ids.includes(teamId);
+  });
+  if (!item) throw new Error('선택한 제출을 찾을 수 없습니다.');
+  return normalizeContestSubmission(item);
+}
+
+/**
+ * POST /api/admin/final-submissions/generate — 관리자 이미지 생성 트리거
+ */
+export async function generateContestSubmissionImages(adminKey: string, apiKey: string): Promise<ContestSubmission> {
+  const resp = await fetch(apiUrl('/admin/final-submissions/generate'), {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      ...adminHeaders(adminKey),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const detail = stringValue(asRecord(body)?.detail);
+    throw new Error(detail || `이미지 생성 요청 실패 (${resp.status})`);
+  }
+  return normalizeContestSubmission(body);
 }
 
 /**
@@ -833,23 +1017,18 @@ export async function fetchContestAnalysisItems(adminKey: string): Promise<Conte
 }
 
 /**
- * POST /api/contest/review/assets — 심사용 A컷/Before 이미지 등록
+ * POST /api/admin/shared-image — 관리자 공유 이미지 1장 업로드
  */
-export async function uploadContestReviewAssets(
-  adminKey: string,
-  referenceImages: File[],
-  beforeImages: File[],
-): Promise<ContestAssetsResponse> {
+export async function uploadContestSharedImage(adminKey: string, file: File): Promise<ContestAssetsResponse> {
   const formData = new FormData();
-  referenceImages.forEach((file) => formData.append('reference_images', file));
-  beforeImages.forEach((file) => formData.append('before_images', file));
+  formData.append('file', file);
 
-  const resp = await fetch(`${API_BASE}/contest/review/assets`, {
+  const resp = await fetch(apiUrl('/admin/shared-image'), {
     method: 'POST',
     credentials: 'include',
     headers: adminHeaders(adminKey),
     body: formData,
   });
-  if (!resp.ok) throw new Error(`대회 이미지 등록 실패 (${resp.status})`);
-  return normalizeContestAssets(await resp.json());
+  if (!resp.ok) throw new Error(await readErrorDetail(resp, '공유 이미지 등록 실패'));
+  return normalizeSharedImageAsset(await resp.json(), `${apiUrl('/shared-image')}?t=${Date.now()}`);
 }

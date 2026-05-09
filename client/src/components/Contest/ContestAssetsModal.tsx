@@ -136,7 +136,7 @@ export default function ContestAssetsModal({ onClose }: ContestAssetsModalProps)
         <div className="px-6 py-4 border-b border-border-default flex items-center justify-between shrink-0">
           <div>
             <h2 className="text-[16px] font-black text-text-primary">대회 이미지</h2>
-            <p className="text-[12px] font-bold text-text-tertiary mt-0.5">A컷 레퍼런스와 Before 이미지를 확인하고 받을 수 있습니다.</p>
+            <p className="text-[12px] font-bold text-text-tertiary mt-0.5">관리자가 공유한 이미지를 확인하고 받을 수 있습니다.</p>
           </div>
           <button
             type="button"
@@ -162,14 +162,9 @@ export default function ContestAssetsModal({ onClose }: ContestAssetsModalProps)
                 </div>
               )}
               <AssetGrid
-                title="A컷 레퍼런스"
-                emptyText="등록된 A컷 레퍼런스가 없습니다."
+                title="공유 이미지"
+                emptyText="등록된 공유 이미지가 없습니다."
                 assets={assets.reference_images}
-              />
-              <AssetGrid
-                title="Before 이미지"
-                emptyText="등록된 Before 이미지가 없습니다."
-                assets={assets.before_images}
               />
             </div>
           )}

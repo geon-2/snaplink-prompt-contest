@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  generateContestSubmissionImages,
   fetchContestAssets,
   fetchContestReviewTeam,
   fetchContestReviewTeams,
-  uploadContestReviewAssets,
+  uploadContestSharedImage,
 } from '../../services/api';
 import type {
   ContestAssetsResponse,
@@ -17,16 +18,6 @@ interface ContestReviewPageProps {
 }
 
 const ADMIN_KEY_STORAGE = 'pa_admin_review_key';
-const TEAM_JSON_TEMPLATE = {
-  '1': {
-    team_name: '1팀',
-    api_key: 'TEAM_1_API_KEY',
-  },
-  '2': {
-    team_name: '2팀',
-    api_key: 'TEAM_2_API_KEY',
-  },
-};
 
 function emptyAssets(): ContestAssetsResponse {
   return { reference_images: [], before_images: [] };
@@ -40,19 +31,6 @@ function formatDateTime(value?: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-function downloadTeamJsonTemplate(): void {
-  const json = `${JSON.stringify(TEAM_JSON_TEMPLATE, null, 2)}\n`;
-  const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'contest-teams.sample.json';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
 }
 
 function StatusBadge({ submitted }: { submitted: boolean }) {
@@ -82,6 +60,7 @@ function PromptBlock({ label, value }: { label: string; value?: string | null })
 
 function ResultPair({ result }: { result: ContestGeneratedResult }) {
   const afterUrl = result.after_image?.url;
+  const hasBeforeImage = Boolean(result.before_image.url);
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white overflow-hidden shadow-sm">
@@ -101,12 +80,16 @@ function ResultPair({ result }: { result: ContestGeneratedResult }) {
       </div>
       <div className="grid md:grid-cols-2">
         <div className="min-w-0 border-b md:border-b-0 md:border-r border-slate-200">
-          <div className="px-3 py-2 text-[10px] font-black text-text-tertiary uppercase tracking-wider">Before</div>
+          <div className="px-3 py-2 text-[10px] font-black text-text-tertiary uppercase tracking-wider">
+            {hasBeforeImage ? 'Before' : 'Prompt'}
+          </div>
           <div className="aspect-square bg-slate-100">
-            {result.before_image.url ? (
+            {hasBeforeImage ? (
               <img src={result.before_image.url} alt={result.before_image.title} className="w-full h-full object-contain" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-[11px] font-bold text-text-tertiary">이미지 없음</div>
+              <div className="w-full h-full flex items-center justify-center px-4 text-center text-[11px] font-bold text-text-tertiary">
+                최종 프롬프트 기반 생성
+              </div>
             )}
           </div>
         </div>
@@ -155,19 +138,16 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
   const [assets, setAssets] = useState<ContestAssetsResponse>(emptyAssets);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [selectedSubmission, setSelectedSubmission] = useState<ContestSubmission | null>(null);
-  const [referenceFiles, setReferenceFiles] = useState<File[]>([]);
-  const [beforeFiles, setBeforeFiles] = useState<File[]>([]);
+  const [sharedImageFile, setSharedImageFile] = useState<File | null>(null);
+  const [generationApiKey, setGenerationApiKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const promptAResults = useMemo(
-    () => selectedSubmission?.results.filter((result) => result.prompt_slot === 'A') ?? [],
-    [selectedSubmission],
-  );
-  const promptBResults = useMemo(
-    () => selectedSubmission?.results.filter((result) => result.prompt_slot === 'B') ?? [],
+  const generatedResults = useMemo(
+    () => selectedSubmission?.results ?? [],
     [selectedSubmission],
   );
 
@@ -182,12 +162,11 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
     setError(null);
     try {
       sessionStorage.setItem(ADMIN_KEY_STORAGE, trimmedKey);
-      const [teamItems, assetItems] = await Promise.all([
-        fetchContestReviewTeams(trimmedKey),
-        fetchContestAssets(),
-      ]);
+      const teamItems = await fetchContestReviewTeams(trimmedKey);
       setTeams(teamItems);
-      setAssets(assetItems);
+      fetchContestAssets()
+        .then(setAssets)
+        .catch(() => setAssets(emptyAssets()));
       if (teamItems.length > 0 && !selectedTeamId) {
         setSelectedTeamId(teamItems[0].team_id);
       }
@@ -215,7 +194,7 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
         setSelectedSubmission(await fetchContestReviewTeam(selectedTeamId, trimmedKey));
       } catch (err) {
         setSelectedSubmission(null);
-        setError(err instanceof Error ? err.message : '팀 제출 결과를 불러오지 못했습니다.');
+        setError(err instanceof Error ? err.message : '제출 결과를 불러오지 못했습니다.');
       } finally {
         setIsLoadingDetail(false);
       }
@@ -230,7 +209,7 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
       setError('관리자 키를 입력해주세요.');
       return;
     }
-    if (referenceFiles.length === 0 && beforeFiles.length === 0) {
+    if (!sharedImageFile) {
       setError('등록할 이미지를 선택해주세요.');
       return;
     }
@@ -238,15 +217,41 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
     setIsUploading(true);
     setError(null);
     try {
-      setAssets(await uploadContestReviewAssets(trimmedKey, referenceFiles, beforeFiles));
-      setReferenceFiles([]);
-      setBeforeFiles([]);
+      setAssets(await uploadContestSharedImage(trimmedKey, sharedImageFile));
+      setSharedImageFile(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : '이미지 등록에 실패했습니다.');
     } finally {
       setIsUploading(false);
     }
-  }, [adminKey, beforeFiles, referenceFiles]);
+  }, [adminKey, sharedImageFile]);
+
+  const handleGenerateImages = useCallback(async () => {
+    const trimmedKey = adminKey.trim();
+    const targetApiKey = generationApiKey.trim();
+    if (!trimmedKey) {
+      setError('관리자 키를 입력해주세요.');
+      return;
+    }
+    if (!targetApiKey) {
+      setError('이미지를 생성할 사용자 API key를 입력해주세요.');
+      return;
+    }
+
+    setIsGenerating(true);
+    setError(null);
+    try {
+      const submission = await generateContestSubmissionImages(trimmedKey, targetApiKey);
+      setSelectedTeamId(submission.team_id);
+      setSelectedSubmission(submission);
+      setGenerationApiKey('');
+      setTeams(await fetchContestReviewTeams(trimmedKey));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '이미지 생성 요청에 실패했습니다.');
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [adminKey, generationApiKey]);
 
   return (
     <div className="h-screen w-screen bg-bg-primary text-text-primary overflow-hidden flex flex-col">
@@ -299,51 +304,49 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
                 확인
               </button>
             </div>
-            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[11px] font-bold text-text-tertiary leading-relaxed mb-2">
-                서버 환경변수에는 관리자 키와 팀/API key 매핑 JSON을 등록합니다.
-              </div>
+          </section>
+
+          <section className="border-t border-slate-200 pt-5">
+            <div className="text-[12px] font-black text-text-primary mb-2">이미지 생성</div>
+            <div className="space-y-2">
+              <input
+                type="password"
+                value={generationApiKey}
+                onChange={(event) => setGenerationApiKey(event.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] font-bold outline-none transition-all focus:border-accent-pro/50 focus:bg-white focus:ring-4 focus:ring-accent-pro/10"
+                placeholder="사용자 API key 원문"
+              />
               <button
                 type="button"
-                onClick={downloadTeamJsonTemplate}
-                className="w-full h-9 rounded-lg bg-white border border-slate-200 text-[12px] font-black text-text-secondary hover:text-accent-pro hover:border-accent-pro/30 transition-all"
+                onClick={handleGenerateImages}
+                disabled={isGenerating}
+                className="w-full h-10 rounded-lg bg-slate-900 text-white text-[12px] font-black disabled:opacity-50"
               >
-                팀 JSON 템플릿 다운로드
+                {isGenerating ? '생성 요청 중...' : '이미지 2장 생성'}
               </button>
             </div>
           </section>
 
           <section className="border-t border-slate-200 pt-5">
             <div className="flex items-center justify-between mb-3">
-              <div className="text-[12px] font-black text-text-primary">이미지 등록</div>
+              <div className="text-[12px] font-black text-text-primary">공유 이미지</div>
               <span className="text-[10px] font-bold text-text-tertiary">
-                A컷 {assets.reference_images.length} / Before {assets.before_images.length}
+                {assets.reference_images.length}장
               </span>
             </div>
             <div className="space-y-3">
               <label className="block">
-                <span className="block text-[11px] font-black text-text-tertiary mb-1.5">A컷 레퍼런스</span>
+                <span className="block text-[11px] font-black text-text-tertiary mb-1.5">업로드할 이미지</span>
                 <input
                   type="file"
                   accept="image/*"
-                  multiple
-                  onChange={(event) => setReferenceFiles(Array.from(event.target.files ?? []))}
+                  onChange={(event) => setSharedImageFile(event.target.files?.[0] ?? null)}
                   className="block w-full text-[11px] font-bold text-text-secondary file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-slate-100 file:text-text-secondary file:font-black"
                 />
               </label>
-              <label className="block">
-                <span className="block text-[11px] font-black text-text-tertiary mb-1.5">Before 이미지</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(event) => setBeforeFiles(Array.from(event.target.files ?? []))}
-                  className="block w-full text-[11px] font-bold text-text-secondary file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-slate-100 file:text-text-secondary file:font-black"
-                />
-              </label>
-              {(referenceFiles.length > 0 || beforeFiles.length > 0) && (
+              {sharedImageFile && (
                 <div className="text-[11px] font-bold text-text-tertiary">
-                  선택됨: A컷 {referenceFiles.length}장, Before {beforeFiles.length}장
+                  선택됨: {sharedImageFile.name}
                 </div>
               )}
               <button
@@ -358,11 +361,11 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
           </section>
 
           <section className="border-t border-slate-200 pt-5">
-            <div className="text-[12px] font-black text-text-primary mb-3">팀 목록</div>
+            <div className="text-[12px] font-black text-text-primary mb-3">제출 목록</div>
             <div className="space-y-1.5">
               {teams.length === 0 ? (
                 <div className="h-24 rounded-lg border border-dashed border-slate-200 bg-slate-50 flex items-center justify-center text-[12px] font-bold text-text-tertiary">
-                  팀 없음
+                  제출 없음
                 </div>
               ) : (
                 teams.map((team) => (
@@ -397,7 +400,7 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
             )}
 
             {isLoadingDetail ? (
-              <div className="h-64 flex items-center justify-center text-[13px] font-bold text-text-tertiary">팀 결과를 불러오는 중...</div>
+              <div className="h-64 flex items-center justify-center text-[13px] font-bold text-text-tertiary">제출 결과를 불러오는 중...</div>
             ) : selectedSubmission ? (
               <>
                 <div className="bg-white border border-slate-200 rounded-lg p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -410,17 +413,13 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
                   </div>
                 </div>
 
-                <div className="grid lg:grid-cols-2 gap-4">
-                  <PromptBlock label="Prompt A" value={selectedSubmission.prompt_a} />
-                  <PromptBlock label="Prompt B" value={selectedSubmission.prompt_b} />
-                </div>
+                <PromptBlock label="Final Prompt" value={selectedSubmission.prompt_a} />
 
-                <ResultSection title="Prompt A 결과" results={promptAResults} />
-                <ResultSection title="Prompt B 결과" results={promptBResults} />
+                <ResultSection title="생성 이미지" results={generatedResults} />
               </>
             ) : (
               <div className="h-64 rounded-lg border border-dashed border-slate-200 bg-white flex items-center justify-center text-[13px] font-bold text-text-tertiary">
-                팀을 선택하세요.
+                제출을 선택하세요.
               </div>
             )}
           </div>

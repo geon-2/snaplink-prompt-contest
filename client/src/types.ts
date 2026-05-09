@@ -135,7 +135,7 @@ export interface UsageInfo {
 
 export type ContestPromptSlot = 'A' | 'B';
 
-export type ContestSubmissionStatus = 'not_submitted' | 'generating' | 'submitted' | 'failed';
+export type ContestSubmissionStatus = 'not_submitted' | 'generating' | 'submitted' | 'completed' | 'failed';
 
 export type ContestResultStatus = 'pending' | 'generating' | 'succeeded' | 'failed';
 

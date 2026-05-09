@@ -63,9 +63,6 @@ function ConfirmSubmitModal({
 }
 
 function SubmittedSummary({ submission }: { submission: ContestSubmission }) {
-  const promptB = submission.prompt_b?.trim();
-  const successCount = submission.results.filter((result) => result.status === 'succeeded').length;
-
   return (
     <div className="rounded-lg border border-accent-pro/20 bg-accent-pro/[0.04] p-5">
       <div className="flex items-center justify-between gap-4 mb-4">
@@ -76,21 +73,13 @@ function SubmittedSummary({ submission }: { submission: ContestSubmission }) {
           )}
         </div>
         <div className="px-3 py-1.5 rounded-lg bg-white border border-accent-pro/15 text-[11px] font-black text-accent-pro">
-          결과 {successCount}/{submission.results.length}
+          {submission.status}
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="bg-white border border-slate-200 rounded-lg p-4">
-          <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider mb-2">Prompt A</div>
-          <div className="text-[13px] font-bold text-text-primary leading-relaxed whitespace-pre-wrap">{submission.prompt_a}</div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-lg p-4">
-          <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider mb-2">Prompt B</div>
-          <div className="text-[13px] font-bold text-text-primary leading-relaxed whitespace-pre-wrap">
-            {promptB || '미제출'}
-          </div>
-        </div>
+      <div className="bg-white border border-slate-200 rounded-lg p-4">
+        <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider mb-2">Final Prompt</div>
+        <div className="text-[13px] font-bold text-text-primary leading-relaxed whitespace-pre-wrap">{submission.prompt_a}</div>
       </div>
     </div>
   );
@@ -99,7 +88,6 @@ function SubmittedSummary({ submission }: { submission: ContestSubmission }) {
 export default function ContestSubmitPage({ onBackToChat }: ContestSubmitPageProps) {
   const [me, setMe] = useState<ContestMe | null>(null);
   const [promptA, setPromptA] = useState('');
-  const [promptB, setPromptB] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -115,7 +103,6 @@ export default function ContestSubmitPage({ onBackToChat }: ContestSubmitPagePro
       const meData = await fetchContestMe();
       setMe(meData);
       setPromptA(meData.submission?.prompt_a ?? '');
-      setPromptB(meData.submission?.prompt_b ?? '');
     } catch (err) {
       setError(err instanceof Error ? err.message : '제출 정보를 불러오지 못했습니다.');
     } finally {
@@ -132,7 +119,7 @@ export default function ContestSubmitPage({ onBackToChat }: ContestSubmitPagePro
     setIsSubmitting(true);
     setError(null);
     try {
-      const submission = await submitContestPrompts(promptA.trim(), promptB.trim());
+      const submission = await submitContestPrompts(promptA.trim());
       setMe({
         team_id: submission.team_id,
         team_name: submission.team_name,
@@ -145,7 +132,7 @@ export default function ContestSubmitPage({ onBackToChat }: ContestSubmitPagePro
     } finally {
       setIsSubmitting(false);
     }
-  }, [canSubmit, promptA, promptB]);
+  }, [canSubmit, promptA]);
 
   return (
     <div className="h-screen w-screen bg-bg-primary text-text-primary overflow-hidden flex flex-col">
@@ -189,40 +176,29 @@ export default function ContestSubmitPage({ onBackToChat }: ContestSubmitPagePro
                     <div>
                       <h2 className="text-[14px] font-black text-text-primary">답안 입력</h2>
                       <div className="text-[11px] font-bold text-text-tertiary mt-1">
-                        제출 시 등록된 Before 이미지 전체에 대한 after 생성이 요청됩니다.
+                        제출된 프롬프트는 관리자 심사 화면에서 이미지 생성에 사용됩니다.
                       </div>
                     </div>
                     <div className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-black text-text-tertiary">
-                      Prompt B 선택
+                      1회 제출
                     </div>
                   </div>
 
                   <div className="p-5 space-y-5">
                     <label className="block">
-                      <div className="text-[12px] font-black text-text-secondary mb-2">Prompt A</div>
+                      <div className="text-[12px] font-black text-text-secondary mb-2">Final Prompt</div>
                       <textarea
                         value={promptA}
                         onChange={(event) => setPromptA(event.target.value)}
                         disabled={submitted || isSubmitting}
                         className="w-full min-h-[180px] resize-y rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] font-bold text-text-primary leading-relaxed outline-none focus:bg-white focus:border-accent-pro/50 focus:ring-4 focus:ring-accent-pro/10 transition-all disabled:opacity-60"
-                        placeholder="최종 프롬프트 A를 입력하세요."
-                      />
-                    </label>
-
-                    <label className="block">
-                      <div className="text-[12px] font-black text-text-secondary mb-2">Prompt B</div>
-                      <textarea
-                        value={promptB}
-                        onChange={(event) => setPromptB(event.target.value)}
-                        disabled={submitted || isSubmitting}
-                        className="w-full min-h-[180px] resize-y rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] font-bold text-text-primary leading-relaxed outline-none focus:bg-white focus:border-accent-pro/50 focus:ring-4 focus:ring-accent-pro/10 transition-all disabled:opacity-60"
-                        placeholder="최종 프롬프트 B를 입력하세요."
+                        placeholder="최종 프롬프트를 입력하세요."
                       />
                     </label>
 
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
                       <div className="text-[12px] font-bold text-text-tertiary">
-                        제출 시 등록된 Before 이미지 전체에 대한 after 생성이 요청됩니다.
+                        제출 후에는 같은 API key로 다시 제출할 수 없습니다.
                       </div>
                       <button
                         type="button"
