@@ -311,7 +311,6 @@ export default function App() {
           onSettingsOpen={() => setIsSettingsOpen(true)}
           onContestAssetsOpen={() => setIsContestAssetsOpen(true)}
           onSubmitOpen={() => navigateTo('/submit')}
-          onAnalysisOpen={() => navigateTo('/analysis')}
           onRenameSession={handleRenameSession}
           onDeleteSession={handleDeleteSession}
           usage={usage}
