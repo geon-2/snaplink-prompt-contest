@@ -7,6 +7,15 @@ import type {
   ContestAssetsResponse,
   ContestImageAsset,
   ContestMe,
+  ContestAnalysisApiKeyItem,
+  ContestAnalysisEvent,
+  ContestAnalysisEventKind,
+  ContestAnalysisEventRole,
+  ContestAnalysisEventStatus,
+  ContestAnalysisImage,
+  ContestAnalysisImageKind,
+  ContestAnalysisSession,
+  ContestAnalysisSummary,
   ContestResultStatus,
   ContestSubmission,
   ContestSubmissionStatus,
@@ -32,8 +41,28 @@ function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
+function numericValue(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
 function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+function collectionValue(value: unknown, keyName = 'api_key'): unknown[] {
+  if (Array.isArray(value)) return value;
+  const record = asRecord(value);
+  if (!record) return [];
+
+  return Object.entries(record).map(([key, item]) => ({
+    [keyName]: key,
+    ...(asRecord(item) ?? {}),
+  }));
 }
 
 function firstDefined<T>(...values: T[]): T | undefined {
@@ -447,6 +476,192 @@ function adminHeaders(adminKey: string): HeadersInit {
   };
 }
 
+function maskAnalysisApiKey(apiKey: string): string {
+  const normalized = apiKey.trim();
+  if (!normalized) return '...';
+  return `...${normalized.slice(-4).toUpperCase()}`;
+}
+
+function normalizeAnalysisImageKind(value: unknown, fallback: ContestAnalysisImageKind): ContestAnalysisImageKind {
+  const kind = stringValue(value);
+  if (kind === 'before' || kind === 'after' || kind === 'attachment' || kind === 'reference' || kind === 'generated') {
+    return kind;
+  }
+  return fallback;
+}
+
+function normalizeAnalysisImage(
+  raw: unknown,
+  fallbackId: string,
+  fallbackKind: ContestAnalysisImageKind,
+): ContestAnalysisImage {
+  const record = asRecord(raw) ?? {};
+  const asset = normalizeContestAsset(raw, fallbackId);
+
+  return {
+    ...asset,
+    label: stringValue(firstDefined(record.label, record.caption, record.alt)) ?? null,
+    kind: normalizeAnalysisImageKind(record.kind, fallbackKind),
+  };
+}
+
+function normalizeAnalysisEventKind(value: unknown, role?: ContestAnalysisEventRole | null): ContestAnalysisEventKind {
+  const kind = stringValue(value);
+  if (
+    kind === 'chat_message' ||
+    kind === 'before_image_upload' ||
+    kind === 'gemini_analysis' ||
+    kind === 'prompt_candidate' ||
+    kind === 'image_generation_request' ||
+    kind === 'image_generation_result'
+  ) {
+    return kind;
+  }
+  if (kind === 'message' || kind === 'chat' || kind === 'text') return 'chat_message';
+  if (kind === 'analysis') return 'gemini_analysis';
+  if (kind === 'prompt') return 'prompt_candidate';
+  if (kind === 'image_request' || kind === 'generation_request') return 'image_generation_request';
+  if (kind === 'image' || kind === 'result' || kind === 'generation_result') return 'image_generation_result';
+  if (role === 'assistant') return 'gemini_analysis';
+  return 'chat_message';
+}
+
+function normalizeAnalysisRole(value: unknown): ContestAnalysisEventRole | null {
+  const role = stringValue(value);
+  if (role === 'user' || role === 'assistant' || role === 'system') return role;
+  return null;
+}
+
+function normalizeAnalysisStatus(value: unknown): ContestAnalysisEventStatus | null {
+  const status = stringValue(value);
+  if (
+    status === 'pending' ||
+    status === 'generating' ||
+    status === 'succeeded' ||
+    status === 'failed' ||
+    status === 'running' ||
+    status === 'unknown'
+  ) {
+    return status;
+  }
+  return null;
+}
+
+function normalizeAnalysisEvent(raw: unknown, fallbackSessionId: string, index: number): ContestAnalysisEvent {
+  const record = asRecord(raw) ?? {};
+  const role = normalizeAnalysisRole(record.role);
+  const kind = normalizeAnalysisEventKind(firstDefined(record.kind, record.type, record.event_type), role);
+  const sessionId = stringValue(firstDefined(record.session_id, record.chat_id)) ?? fallbackSessionId;
+
+  const beforeRaw = firstDefined(record.before_image, record.beforeImage);
+  const afterRaw = firstDefined(record.after_image, record.afterImage, record.generated_image, record.result_image);
+  const beforeImage = beforeRaw ? normalizeAnalysisImage(beforeRaw, `${sessionId}-before-${index + 1}`, 'before') : null;
+  const afterImage = afterRaw ? normalizeAnalysisImage(afterRaw, `${sessionId}-after-${index + 1}`, 'after') : null;
+
+  const explicitImages = arrayValue(firstDefined(record.images, record.attachments, record.attached_images)).map((item, imageIndex) =>
+    normalizeAnalysisImage(item, `${sessionId}-event-${index + 1}-image-${imageIndex + 1}`, role === 'assistant' ? 'generated' : 'attachment')
+  );
+  const directImage =
+    (record.image_s3_key || record.s3_key || record.image_url || record.url) && !beforeRaw && !afterRaw
+      ? [normalizeAnalysisImage(record, `${sessionId}-event-${index + 1}-direct-image`, role === 'assistant' ? 'generated' : 'attachment')]
+      : [];
+
+  return {
+    id: stringValue(firstDefined(record.id, record.event_id, record.message_id)) ?? `${sessionId}-event-${index + 1}`,
+    session_id: sessionId,
+    timestamp: stringValue(firstDefined(record.timestamp, record.created_at, record.createdAt)) ?? new Date(0).toISOString(),
+    kind,
+    role,
+    model: stringValue(firstDefined(record.model, record.model_name, record.modelName)) ?? null,
+    text: stringValue(firstDefined(record.text, record.content, record.text_content, record.prompt)) ?? null,
+    images: [...explicitImages, ...directImage],
+    before_image: beforeImage,
+    after_image: afterImage,
+    linked_prompt_id: stringValue(firstDefined(record.linked_prompt_id, record.linkedPromptId, record.prompt_id)) ?? null,
+    linked_before_image_id:
+      stringValue(firstDefined(record.linked_before_image_id, record.linkedBeforeImageId, record.before_image_id)) ?? null,
+    status: normalizeAnalysisStatus(record.status),
+    error_message: stringValue(firstDefined(record.error_message, record.error, record.message)) ?? null,
+  };
+}
+
+function getDateMs(value?: string | null): number {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeAnalysisSession(raw: unknown, index: number): ContestAnalysisSession {
+  const record = asRecord(raw) ?? {};
+  const sessionId = stringValue(firstDefined(record.session_id, record.chat_id, record.id)) ?? `session-${index + 1}`;
+  const events = arrayValue(firstDefined(record.events, record.messages, record.logs, record.timeline))
+    .map((item, eventIndex) => normalizeAnalysisEvent(item, sessionId, eventIndex))
+    .sort((a, b) => getDateMs(a.timestamp) - getDateMs(b.timestamp));
+  const firstEvent = events[0];
+  const lastEvent = events[events.length - 1];
+  const createdAt =
+    stringValue(firstDefined(record.created_at, record.createdAt, firstEvent?.timestamp)) ?? new Date(0).toISOString();
+  const lastMessageAt =
+    stringValue(firstDefined(record.last_message_at, record.lastMessageAt, record.updated_at, record.updatedAt, lastEvent?.timestamp)) ??
+    createdAt;
+  const firstPreview =
+    stringValue(firstDefined(record.first_message_preview, record.firstMessagePreview, record.preview)) ??
+    firstEvent?.text?.trim().replace(/\s+/g, ' ').slice(0, 120) ??
+    '메시지 없음';
+
+  return {
+    session_id: sessionId,
+    created_at: createdAt,
+    last_message_at: lastMessageAt,
+    title: stringValue(firstDefined(record.title, record.name)) ?? null,
+    first_message_preview: firstPreview,
+    events,
+  };
+}
+
+function eventIsGenerationResult(event: ContestAnalysisEvent): boolean {
+  return event.kind === 'image_generation_result' || Boolean(event.after_image);
+}
+
+function normalizeAnalysisSummary(raw: unknown, sessions: ContestAnalysisSession[]): ContestAnalysisSummary {
+  const record = asRecord(raw) ?? {};
+  const events = sessions.flatMap((session) => session.events);
+  const attachedImageCount = events.reduce((count, event) => {
+    const pairCount = (event.before_image ? 1 : 0) + (event.after_image ? 1 : 0);
+    return count + event.images.length + pairCount;
+  }, 0);
+  const generationResultCount = events.filter(eventIsGenerationResult).length;
+  const failedCount = events.filter((event) => event.status === 'failed' || Boolean(event.error_message)).length;
+  const lastActivityAt = sessions
+    .map((session) => session.last_message_at)
+    .sort((a, b) => getDateMs(b) - getDateMs(a))[0] ?? null;
+
+  return {
+    session_count: numericValue(firstDefined(record.session_count, record.sessionCount)) ?? sessions.length,
+    message_count: numericValue(firstDefined(record.message_count, record.messageCount)) ?? events.length,
+    attached_image_count: numericValue(firstDefined(record.attached_image_count, record.attachedImageCount)) ?? attachedImageCount,
+    generation_result_count:
+      numericValue(firstDefined(record.generation_result_count, record.generationResultCount)) ?? generationResultCount,
+    failed_count: numericValue(firstDefined(record.failed_count, record.failedCount)) ?? failedCount,
+    last_activity_at: stringValue(firstDefined(record.last_activity_at, record.lastActivityAt)) ?? lastActivityAt,
+  };
+}
+
+function normalizeAnalysisApiKeyItem(raw: unknown, index: number): ContestAnalysisApiKeyItem {
+  const record = asRecord(raw) ?? {};
+  const apiKey = stringValue(firstDefined(record.api_key, record.apiKey, record.key)) ?? `api-key-${index + 1}`;
+  const sessions = collectionValue(firstDefined(record.sessions, record.chats, record.chat_sessions, record.chatSessions), 'session_id')
+    .map((item, sessionIndex) => normalizeAnalysisSession(item, sessionIndex))
+    .sort((a, b) => getDateMs(b.last_message_at) - getDateMs(a.last_message_at));
+
+  return {
+    api_key: apiKey,
+    masked_api_key: stringValue(firstDefined(record.masked_api_key, record.maskedApiKey)) ?? maskAnalysisApiKey(apiKey),
+    sessions,
+    summary: normalizeAnalysisSummary(record.summary, sessions),
+  };
+}
+
 /**
  * GET /api/contest/me — 현재 API key에 매핑된 팀/제출 상태
  */
@@ -511,6 +726,24 @@ export async function fetchContestReviewTeam(teamId: string, adminKey: string): 
   });
   if (!resp.ok) throw new Error(`팀 제출 결과 로드 실패 (${resp.status})`);
   return normalizeContestSubmission(await resp.json());
+}
+
+/**
+ * GET /api/contest/review/analysis — API key별 세션 로그 분석 데이터
+ */
+export async function fetchContestAnalysisItems(adminKey: string): Promise<ContestAnalysisApiKeyItem[]> {
+  const resp = await fetch(`${API_BASE}/contest/review/analysis`, {
+    credentials: 'include',
+    headers: adminHeaders(adminKey),
+  });
+  if (!resp.ok) throw new Error(`분석 로그 로드 실패 (${resp.status})`);
+
+  const body = await resp.json();
+  const record = asRecord(body);
+  const items = collectionValue(firstDefined(record?.items, record?.api_keys, record?.analysis, body));
+  return items
+    .map((item, index) => normalizeAnalysisApiKeyItem(item, index))
+    .sort((a, b) => a.api_key.localeCompare(b.api_key));
 }
 
 /**

@@ -29,6 +29,7 @@ interface SidebarProps {
   onSettingsOpen: () => void;
   onContestAssetsOpen: () => void;
   onSubmitOpen: () => void;
+  onAnalysisOpen: () => void;
   onRenameSession: (chatId: string, newTitle: string) => void;
   onDeleteSession: (chatId: string) => void;
   usage?: UsageInfo;
@@ -278,6 +279,7 @@ export default function Sidebar({
   onSettingsOpen,
   onContestAssetsOpen,
   onSubmitOpen,
+  onAnalysisOpen,
   onRenameSession,
   onDeleteSession,
   usage,
@@ -384,6 +386,17 @@ export default function Sidebar({
             <polyline points="21 15 16 10 5 21" />
           </svg>
           대회 이미지
+        </button>
+        <button
+          type="button"
+          onClick={onAnalysisOpen}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-[12px] font-black text-text-secondary hover:text-accent-pro hover:border-accent-pro/30 transition-all"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+            <path d="M3 3v18h18" />
+            <path d="M7 15l4-4 3 3 5-7" />
+          </svg>
+          분석 로그
         </button>
       </div>
 

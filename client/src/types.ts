@@ -188,3 +188,66 @@ export interface ContestTeamSummary {
   submitted_at?: string | null;
   result_count?: number | null;
 }
+
+// ─── 대회 분석 타입 ───
+
+export type ContestAnalysisEventKind =
+  | 'chat_message'
+  | 'before_image_upload'
+  | 'gemini_analysis'
+  | 'prompt_candidate'
+  | 'image_generation_request'
+  | 'image_generation_result';
+
+export type ContestAnalysisEventRole = MessageRole | 'system';
+
+export type ContestAnalysisEventStatus = ContestResultStatus | 'running' | 'unknown';
+
+export type ContestAnalysisImageKind = 'before' | 'after' | 'attachment' | 'reference' | 'generated';
+
+export interface ContestAnalysisImage extends ContestImageAsset {
+  label?: string | null;
+  kind?: ContestAnalysisImageKind | null;
+}
+
+export interface ContestAnalysisEvent {
+  id: string;
+  session_id: string;
+  timestamp: string;
+  kind: ContestAnalysisEventKind;
+  role?: ContestAnalysisEventRole | null;
+  model?: string | null;
+  text?: string | null;
+  images: ContestAnalysisImage[];
+  before_image?: ContestAnalysisImage | null;
+  after_image?: ContestAnalysisImage | null;
+  linked_prompt_id?: string | null;
+  linked_before_image_id?: string | null;
+  status?: ContestAnalysisEventStatus | null;
+  error_message?: string | null;
+}
+
+export interface ContestAnalysisSession {
+  session_id: string;
+  created_at: string;
+  last_message_at: string;
+  title?: string | null;
+  first_message_preview: string;
+  events: ContestAnalysisEvent[];
+}
+
+export interface ContestAnalysisSummary {
+  session_count: number;
+  message_count: number;
+  attached_image_count: number;
+  generation_result_count: number;
+  failed_count: number;
+  last_activity_at?: string | null;
+}
+
+export interface ContestAnalysisApiKeyItem {
+  api_key: string;
+  masked_api_key: string;
+  sessions: ContestAnalysisSession[];
+  summary: ContestAnalysisSummary;
+}

@@ -4,6 +4,7 @@ import ChatPanel from './components/ChatPanel/ChatPanel';
 import LoginPage from './components/Login/LoginPage';
 import SettingsModal from './components/Settings/SettingsModal';
 import ContestAssetsModal from './components/Contest/ContestAssetsModal';
+import ContestAnalysisPage from './components/Contest/ContestAnalysisPage';
 import ContestReviewPage from './components/Contest/ContestReviewPage';
 import ContestSubmitPage from './components/Contest/ContestSubmitPage';
 import { useChat } from './hooks/useChat';
@@ -41,7 +42,8 @@ export default function App() {
 
   const [isBudgetExceeded, setIsBudgetExceeded] = useState(false);
 
-  const currentRoute = routePath === '/submit' ? 'submit' : routePath === '/review' ? 'review' : 'chat';
+  const currentRoute =
+    routePath === '/submit' ? 'submit' : routePath === '/review' ? 'review' : routePath === '/analysis' ? 'analysis' : 'chat';
 
   const navigateTo = useCallback((path: string) => {
     window.history.pushState(null, '', path);
@@ -267,6 +269,10 @@ export default function App() {
     return <ContestReviewPage onBackToChat={() => navigateTo('/')} />;
   }
 
+  if (currentRoute === 'analysis') {
+    return <ContestAnalysisPage onBackToChat={() => navigateTo('/')} />;
+  }
+
   if (!isLoggedIn) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
@@ -305,6 +311,7 @@ export default function App() {
           onSettingsOpen={() => setIsSettingsOpen(true)}
           onContestAssetsOpen={() => setIsContestAssetsOpen(true)}
           onSubmitOpen={() => navigateTo('/submit')}
+          onAnalysisOpen={() => navigateTo('/analysis')}
           onRenameSession={handleRenameSession}
           onDeleteSession={handleDeleteSession}
           usage={usage}
