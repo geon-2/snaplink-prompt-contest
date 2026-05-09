@@ -22,8 +22,6 @@ type TimelineRow =
   | { type: 'boundary'; session: ContestAnalysisSession }
   | { type: 'event'; event: ContestAnalysisEvent; session: ContestAnalysisSession };
 
-const ADMIN_KEY_STORAGE = 'pa_admin_review_key';
-
 const API_FILTERS: Array<{ id: ApiKeyFilter; label: string }> = [
   { id: 'all', label: '전체' },
   { id: 'active', label: '활동 있음' },
@@ -636,7 +634,6 @@ function DetailPanel({
 }
 
 export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPageProps) {
-  const [adminKey, setAdminKey] = useState(() => sessionStorage.getItem(ADMIN_KEY_STORAGE) ?? '');
   const [items, setItems] = useState<ContestAnalysisApiKeyItem[]>([]);
   const [selectedApiKey, setSelectedApiKey] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -650,17 +647,10 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
   const [modalImage, setModalImage] = useState<ContestAnalysisImage | null>(null);
 
   const loadAnalysisData = useCallback(async () => {
-    const trimmedKey = adminKey.trim();
-    if (!trimmedKey) {
-      setError('관리자 키를 입력해주세요.');
-      return;
-    }
-
     setIsLoading(true);
     setError(null);
     try {
-      sessionStorage.setItem(ADMIN_KEY_STORAGE, trimmedKey);
-      const nextItems = await fetchContestAnalysisItems(trimmedKey);
+      const nextItems = await fetchContestAnalysisItems();
       setItems(nextItems);
       setSelectedApiKey((current) => {
         if (current && nextItems.some((item) => item.api_key === current)) return current;
@@ -671,13 +661,11 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
     } finally {
       setIsLoading(false);
     }
-  }, [adminKey]);
+  }, []);
 
   useEffect(() => {
-    if (adminKey.trim()) {
-      loadAnalysisData();
-    }
-  }, []);
+    loadAnalysisData();
+  }, [loadAnalysisData]);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.api_key === selectedApiKey) ?? null,
@@ -805,27 +793,6 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
       <main className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)_400px] lg:overflow-hidden">
         <aside className="min-h-0 overflow-y-auto border-r border-border-default bg-white p-5">
           <section>
-            <div className="mb-2 text-[12px] font-black text-text-primary">관리자 키</div>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={adminKey}
-                onChange={(event) => setAdminKey(event.target.value)}
-                className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] font-bold outline-none transition-all focus:border-accent-pro/50 focus:bg-white focus:ring-4 focus:ring-accent-pro/10"
-                placeholder="Admin review key"
-              />
-              <button
-                type="button"
-                onClick={loadAnalysisData}
-                disabled={isLoading}
-                className="h-10 rounded-lg bg-slate-900 px-3 text-[12px] font-black text-white disabled:opacity-50"
-              >
-                확인
-              </button>
-            </div>
-          </section>
-
-          <section className="mt-5 border-t border-slate-200 pt-5">
             <label className="block">
               <span className="mb-2 block text-[12px] font-black text-text-primary">API key 검색</span>
               <input

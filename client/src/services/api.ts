@@ -495,6 +495,24 @@ function normalizeAnalysisImage(
   fallbackId: string,
   fallbackKind: ContestAnalysisImageKind,
 ): ContestAnalysisImage {
+  if (typeof raw === 'string') {
+    const value = raw.trim();
+    const isDirectUrl = /^(https?:|data:|blob:|\/)/.test(value);
+    const fileName = value.split('/').filter(Boolean).pop() ?? fallbackId;
+
+    return {
+      id: fallbackId,
+      title: fileName,
+      url: isDirectUrl ? value : `/api/images/${value}`,
+      s3_key: isDirectUrl ? null : value,
+      file_name: fileName,
+      mime_type: null,
+      created_at: null,
+      label: null,
+      kind: fallbackKind,
+    };
+  }
+
   const record = asRecord(raw) ?? {};
   const asset = normalizeContestAsset(raw, fallbackId);
 
@@ -517,11 +535,13 @@ function normalizeAnalysisEventKind(value: unknown, role?: ContestAnalysisEventR
   ) {
     return kind;
   }
-  if (kind === 'message' || kind === 'chat' || kind === 'text') return 'chat_message';
+  if (kind === 'chat') return role === 'assistant' ? 'gemini_analysis' : 'chat_message';
+  if (kind === 'message' || kind === 'text') return 'chat_message';
   if (kind === 'analysis') return 'gemini_analysis';
   if (kind === 'prompt') return 'prompt_candidate';
   if (kind === 'image_request' || kind === 'generation_request') return 'image_generation_request';
-  if (kind === 'image' || kind === 'result' || kind === 'generation_result') return 'image_generation_result';
+  if (kind === 'image') return role === 'user' ? 'image_generation_request' : 'image_generation_result';
+  if (kind === 'result' || kind === 'generation_result') return 'image_generation_result';
   if (role === 'assistant') return 'gemini_analysis';
   return 'chat_message';
 }
@@ -553,8 +573,10 @@ function normalizeAnalysisEvent(raw: unknown, fallbackSessionId: string, index: 
   const kind = normalizeAnalysisEventKind(firstDefined(record.kind, record.type, record.event_type), role);
   const sessionId = stringValue(firstDefined(record.session_id, record.chat_id)) ?? fallbackSessionId;
 
+  const hasDirectImage = Boolean(record.image_s3_key || record.s3_key || record.image_url || record.url);
   const beforeRaw = firstDefined(record.before_image, record.beforeImage);
-  const afterRaw = firstDefined(record.after_image, record.afterImage, record.generated_image, record.result_image);
+  const inferredAfterRaw = kind === 'image_generation_result' && hasDirectImage ? record : undefined;
+  const afterRaw = firstDefined(record.after_image, record.afterImage, record.generated_image, record.result_image, inferredAfterRaw);
   const beforeImage = beforeRaw ? normalizeAnalysisImage(beforeRaw, `${sessionId}-before-${index + 1}`, 'before') : null;
   const afterImage = afterRaw ? normalizeAnalysisImage(afterRaw, `${sessionId}-after-${index + 1}`, 'after') : null;
 
@@ -562,7 +584,7 @@ function normalizeAnalysisEvent(raw: unknown, fallbackSessionId: string, index: 
     normalizeAnalysisImage(item, `${sessionId}-event-${index + 1}-image-${imageIndex + 1}`, role === 'assistant' ? 'generated' : 'attachment')
   );
   const directImage =
-    (record.image_s3_key || record.s3_key || record.image_url || record.url) && !beforeRaw && !afterRaw
+    hasDirectImage && !beforeRaw && !afterRaw
       ? [normalizeAnalysisImage(record, `${sessionId}-event-${index + 1}-direct-image`, role === 'assistant' ? 'generated' : 'attachment')]
       : [];
 
@@ -591,12 +613,42 @@ function getDateMs(value?: string | null): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function asInferredBeforeImage(image: ContestAnalysisImage): ContestAnalysisImage {
+  return {
+    ...image,
+    label: image.label ?? 'Before',
+    kind: 'before',
+  };
+}
+
+function inferBeforeAfterLinks(events: ContestAnalysisEvent[]): ContestAnalysisEvent[] {
+  return events.map((event, index) => {
+    if (event.kind !== 'image_generation_result' || event.before_image) return event;
+
+    for (let prevIndex = index - 1; prevIndex >= 0; prevIndex -= 1) {
+      const previous = events[prevIndex];
+      const beforeImage = previous.before_image ?? previous.images[0];
+      if ((previous.role === 'user' || previous.kind === 'image_generation_request') && beforeImage) {
+        return {
+          ...event,
+          before_image: asInferredBeforeImage(beforeImage),
+          linked_before_image_id: event.linked_before_image_id ?? beforeImage.id,
+        };
+      }
+    }
+
+    return event;
+  });
+}
+
 function normalizeAnalysisSession(raw: unknown, index: number): ContestAnalysisSession {
   const record = asRecord(raw) ?? {};
   const sessionId = stringValue(firstDefined(record.session_id, record.chat_id, record.id)) ?? `session-${index + 1}`;
-  const events = arrayValue(firstDefined(record.events, record.messages, record.logs, record.timeline))
-    .map((item, eventIndex) => normalizeAnalysisEvent(item, sessionId, eventIndex))
-    .sort((a, b) => getDateMs(a.timestamp) - getDateMs(b.timestamp));
+  const events = inferBeforeAfterLinks(
+    arrayValue(firstDefined(record.events, record.messages, record.logs, record.timeline))
+      .map((item, eventIndex) => normalizeAnalysisEvent(item, sessionId, eventIndex))
+      .sort((a, b) => getDateMs(a.timestamp) - getDateMs(b.timestamp))
+  );
   const firstEvent = events[0];
   const lastEvent = events[events.length - 1];
   const createdAt =
@@ -605,7 +657,7 @@ function normalizeAnalysisSession(raw: unknown, index: number): ContestAnalysisS
     stringValue(firstDefined(record.last_message_at, record.lastMessageAt, record.updated_at, record.updatedAt, lastEvent?.timestamp)) ??
     createdAt;
   const firstPreview =
-    stringValue(firstDefined(record.first_message_preview, record.firstMessagePreview, record.preview)) ??
+    stringValue(firstDefined(record.first_message_preview, record.firstMessagePreview, record.preview, record.last_message_preview)) ??
     firstEvent?.text?.trim().replace(/\s+/g, ' ').slice(0, 120) ??
     '메시지 없음';
 
@@ -729,20 +781,45 @@ export async function fetchContestReviewTeam(teamId: string, adminKey: string): 
 }
 
 /**
- * GET /api/contest/review/analysis — API key별 세션 로그 분석 데이터
+ * GET /api/admin/chats + /api/admin/chats/:chat_id — API key별 세션 로그 분석 데이터
  */
-export async function fetchContestAnalysisItems(adminKey: string): Promise<ContestAnalysisApiKeyItem[]> {
-  const resp = await fetch(`${API_BASE}/contest/review/analysis`, {
+export async function fetchContestAnalysisItems(): Promise<ContestAnalysisApiKeyItem[]> {
+  const listResp = await fetch(`${API_BASE}/admin/chats`, {
     credentials: 'include',
-    headers: adminHeaders(adminKey),
   });
-  if (!resp.ok) throw new Error(`분석 로그 로드 실패 (${resp.status})`);
+  if (!listResp.ok) throw new Error(`관리자 채팅 목록 로드 실패 (${listResp.status})`);
 
-  const body = await resp.json();
-  const record = asRecord(body);
-  const items = collectionValue(firstDefined(record?.items, record?.api_keys, record?.analysis, body));
-  return items
-    .map((item, index) => normalizeAnalysisApiKeyItem(item, index))
+  const summaries = arrayValue(await listResp.json());
+  const details = await Promise.all(
+    summaries.map(async (summary, index) => {
+      const summaryRecord = asRecord(summary) ?? {};
+      const chatId = stringValue(summaryRecord.chat_id);
+      if (!chatId) return { ...summaryRecord, chat_id: `chat-${index + 1}`, messages: [] };
+
+      const detailResp = await fetch(`${API_BASE}/admin/chats/${encodeURIComponent(chatId)}`, {
+        credentials: 'include',
+      });
+      if (!detailResp.ok) throw new Error(`관리자 채팅 상세 로드 실패 (${detailResp.status})`);
+
+      return {
+        ...summaryRecord,
+        ...(asRecord(await detailResp.json()) ?? {}),
+      };
+    })
+  );
+
+  const grouped = new Map<string, unknown[]>();
+  details.forEach((detail, index) => {
+    const detailRecord = asRecord(detail) ?? {};
+    const summaryRecord = asRecord(summaries[index]) ?? {};
+    const apiKey = stringValue(firstDefined(detailRecord.user_api_key, summaryRecord.user_api_key)) ?? 'unknown-api-key';
+    const sessions = grouped.get(apiKey) ?? [];
+    sessions.push(detail);
+    grouped.set(apiKey, sessions);
+  });
+
+  return Array.from(grouped.entries())
+    .map(([apiKey, sessions], index) => normalizeAnalysisApiKeyItem({ api_key: apiKey, sessions }, index))
     .sort((a, b) => a.api_key.localeCompare(b.api_key));
 }
 
