@@ -25,6 +25,11 @@ import type {
 const API_BASE = '/api';
 const ENABLE_API_DEBUG_LOGS = import.meta.env.DEV;
 
+function apiUrl(path: string): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE}${normalizedPath}`;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null;
 }
@@ -784,7 +789,7 @@ export async function fetchContestReviewTeam(teamId: string, adminKey: string): 
  * GET /api/admin/chats + /api/admin/chats/:chat_id — API key별 세션 로그 분석 데이터
  */
 export async function fetchContestAnalysisItems(): Promise<ContestAnalysisApiKeyItem[]> {
-  const listResp = await fetch(`${API_BASE}/admin/chats`, {
+  const listResp = await fetch(apiUrl('/admin/chats'), {
     credentials: 'include',
   });
   if (!listResp.ok) throw new Error(`관리자 채팅 목록 로드 실패 (${listResp.status})`);
@@ -796,7 +801,7 @@ export async function fetchContestAnalysisItems(): Promise<ContestAnalysisApiKey
       const chatId = stringValue(summaryRecord.chat_id);
       if (!chatId) return { ...summaryRecord, chat_id: `chat-${index + 1}`, messages: [] };
 
-      const detailResp = await fetch(`${API_BASE}/admin/chats/${encodeURIComponent(chatId)}`, {
+      const detailResp = await fetch(apiUrl(`/admin/chats/${encodeURIComponent(chatId)}`), {
         credentials: 'include',
       });
       if (!detailResp.ok) throw new Error(`관리자 채팅 상세 로드 실패 (${detailResp.status})`);
