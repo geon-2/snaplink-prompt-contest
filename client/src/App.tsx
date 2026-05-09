@@ -4,6 +4,7 @@ import ChatPanel from './components/ChatPanel/ChatPanel';
 import LoginPage from './components/Login/LoginPage';
 import SettingsModal from './components/Settings/SettingsModal';
 import ContestAssetsModal from './components/Contest/ContestAssetsModal';
+import AdminChatsPage from './components/Admin/AdminChatsPage';
 import ContestAnalysisPage from './components/Contest/ContestAnalysisPage';
 import ContestReviewPage from './components/Contest/ContestReviewPage';
 import ContestSubmitPage from './components/Contest/ContestSubmitPage';
@@ -43,7 +44,11 @@ export default function App() {
   const [isBudgetExceeded, setIsBudgetExceeded] = useState(false);
 
   const currentRoute =
-    routePath === '/submit' ? 'submit' : routePath === '/review' ? 'review' : routePath === '/analysis' ? 'analysis' : 'chat';
+    routePath === '/submit' ? 'submit'
+    : routePath === '/review' ? 'review'
+    : routePath === '/analysis' ? 'analysis'
+    : routePath === '/admin' ? 'admin'
+    : 'chat';
 
   const navigateTo = useCallback((path: string) => {
     window.history.pushState(null, '', path);
@@ -271,6 +276,10 @@ export default function App() {
 
   if (currentRoute === 'analysis') {
     return <ContestAnalysisPage onBackToChat={() => navigateTo('/')} />;
+  }
+
+  if (currentRoute === 'admin') {
+    return <AdminChatsPage onBackToChat={() => navigateTo('/')} />;
   }
 
   if (!isLoggedIn) {

@@ -767,3 +767,50 @@ export async function uploadContestReviewAssets(
   if (!resp.ok) throw new Error(`대회 이미지 등록 실패 (${resp.status})`);
   return normalizeContestAssets(await resp.json());
 }
+
+export interface AdminChatSummary {
+  chat_id: string;
+  title: string | null;
+  last_message_preview: string | null;
+  last_message_type: string | null;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+  user_uuid: string;
+  user_api_key: string;
+}
+
+export interface AdminChatMessage {
+  message_id: string;
+  role: 'user' | 'assistant';
+  type: 'chat' | 'image';
+  text_content: string | null;
+  image_s3_key: string | null;
+  image_url: string | null;
+  created_at: string;
+}
+
+export interface AdminChatDetail extends AdminChatSummary {
+  messages: AdminChatMessage[];
+}
+
+export async function fetchAdminAllChats(adminKey: string): Promise<AdminChatSummary[]> {
+  const resp = await fetch(`${API_BASE}/admin/chats`, {
+    credentials: 'include',
+    headers: adminHeaders(adminKey),
+  });
+  if (resp.status === 403) throw new Error('어드민 키가 올바르지 않습니다.');
+  if (!resp.ok) throw new Error(`전체 채팅 목록 조회 실패 (${resp.status})`);
+  const data = await resp.json();
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchAdminChat(chatId: string, adminKey: string): Promise<AdminChatDetail> {
+  const resp = await fetch(`${API_BASE}/admin/chats/${chatId}`, {
+    credentials: 'include',
+    headers: adminHeaders(adminKey),
+  });
+  if (resp.status === 403) throw new Error('어드민 키가 올바르지 않습니다.');
+  if (!resp.ok) throw new Error(`채팅 상세 조회 실패 (${resp.status})`);
+  return resp.json();
+}
