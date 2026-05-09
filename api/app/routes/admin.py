@@ -34,6 +34,7 @@ class AdminChatSummary(BaseModel):
 class AdminChatDetail(BaseModel):
     chat_id: UUID
     title: str | None
+    type: str
     created_at: datetime
     updated_at: datetime
     last_message_preview: str | None
@@ -101,9 +102,12 @@ def get_admin_chat_detail(
         .order_by(Message.created_at.asc(), Message.message_id.asc())
     ).all()
 
+    has_image = any(m.type == "image" for m in messages)
+
     return AdminChatDetail(
         chat_id=chat.chat_id,
         title=chat.title,
+        type="image" if has_image else "chat",
         created_at=chat.created_at,
         updated_at=chat.updated_at,
         last_message_preview=chat.last_message_preview,
