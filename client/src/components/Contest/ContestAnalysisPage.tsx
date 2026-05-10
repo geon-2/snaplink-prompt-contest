@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { fetchContestAnalysisItems } from '../../services/api';
@@ -10,6 +10,95 @@ import type {
   ContestAnalysisSession,
 } from '../../types';
 import ImageModal from '../ImageModal/ImageModal';
+import { useAdminImage } from '../../hooks/useAdminImage';
+
+const AdminKeyContext = createContext('');
+
+function AdminKeyModal({
+  initialKey,
+  onConfirm,
+  onClose,
+}: {
+  initialKey: string;
+  onConfirm: (key: string) => void;
+  onClose: () => void;
+}) {
+  const [key, setKey] = useState(initialKey);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (key.trim()) onConfirm(key.trim());
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div
+        className="relative z-10 w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl border border-slate-200 p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-[16px] font-black text-text-primary">관리자 키 입력</h2>
+            <p className="text-[12px] font-bold text-text-tertiary mt-0.5">로그 조회에 필요합니다.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-text-tertiary hover:bg-slate-100 transition-all"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-[12px] font-black text-text-primary mb-1.5">Admin Review Key</label>
+            <input
+              ref={inputRef}
+              type="password"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-4 text-[13px] font-bold outline-none focus:bg-white focus:border-accent-pro/50 focus:ring-4 focus:ring-accent-pro/10 transition-all"
+              placeholder="관리자 키를 입력하세요"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 h-11 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={!key.trim()}
+              className="flex-1 h-11 rounded-xl bg-accent-pro text-white text-[13px] font-black hover:bg-accent-pro/90 transition-all disabled:opacity-40"
+            >
+              확인
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 interface ContestAnalysisPageProps {
   onBackToChat: () => void;
@@ -294,6 +383,10 @@ function ImageThumb({
   label: string;
   onClick?: () => void;
 }) {
+  const adminKey = useContext(AdminKeyContext);
+  const { blobUrl, isLoading } = useAdminImage(image?.url, adminKey);
+  const displayUrl = blobUrl;
+
   return (
     <button
       type="button"
@@ -305,8 +398,12 @@ function ImageThumb({
         <span className="truncate text-[10px] font-black uppercase tracking-wider text-text-tertiary">{label}</span>
       </div>
       <div className="aspect-square bg-slate-100">
-        {image?.url ? (
-          <img src={image.url} alt={image.title} className="h-full w-full object-contain" />
+        {isLoading ? (
+          <div className="flex h-full items-center justify-center">
+            <div className="w-5 h-5 border-2 border-accent-pro/30 border-t-accent-pro rounded-full animate-spin" />
+          </div>
+        ) : displayUrl ? (
+          <img src={displayUrl} alt={image?.title} className="h-full w-full object-contain" />
         ) : (
           <div className="flex h-full items-center justify-center px-3 text-center text-[11px] font-bold text-text-tertiary">
             이미지 없음
@@ -637,6 +734,7 @@ function DetailPanel({
 
 export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPageProps) {
   const [adminKey, setAdminKey] = useState(() => sessionStorage.getItem(ADMIN_KEY_STORAGE) ?? '');
+  const [showAdminKeyModal, setShowAdminKeyModal] = useState(() => !sessionStorage.getItem(ADMIN_KEY_STORAGE));
   const [items, setItems] = useState<ContestAnalysisApiKeyItem[]>([]);
   const [selectedApiKey, setSelectedApiKey] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -648,6 +746,12 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modalImage, setModalImage] = useState<ContestAnalysisImage | null>(null);
+
+  const handleAdminKeyConfirm = useCallback((key: string) => {
+    sessionStorage.setItem(ADMIN_KEY_STORAGE, key);
+    setAdminKey(key);
+    setShowAdminKeyModal(false);
+  }, []);
 
   const loadAnalysisData = useCallback(async () => {
     const trimmedKey = adminKey.trim();
@@ -677,7 +781,8 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
     if (adminKey.trim()) {
       loadAnalysisData();
     }
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminKey]);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.api_key === selectedApiKey) ?? null,
@@ -773,59 +878,66 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
   const selectedEventSession = selectedEvent ? sessionById.get(selectedEvent.session_id) ?? null : null;
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg-primary text-text-primary">
-      <header className="flex h-[64px] shrink-0 items-center justify-between border-b border-border-default bg-white px-5 md:px-8">
-        <div className="flex min-w-0 items-center gap-3">
-          <button
-            type="button"
-            onClick={onBackToChat}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-text-tertiary transition-all hover:bg-slate-100 hover:text-text-primary"
-            title="채팅으로 돌아가기"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-              <path d="M19 12H5" />
-              <path d="M12 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div className="min-w-0">
-            <h1 className="truncate text-[16px] font-black text-text-primary">프롬프트 분석</h1>
-            <div className="truncate text-[11px] font-bold text-text-tertiary">API key별 세션 로그</div>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={loadAnalysisData}
-          disabled={isLoading}
-          className="h-9 rounded-lg bg-accent-pro px-3 text-[12px] font-black text-white transition-all hover:bg-accent-pro/90 disabled:opacity-50"
-        >
-          {isLoading ? '불러오는 중...' : '새로고침'}
-        </button>
-      </header>
-
-      <main className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)_400px] lg:overflow-hidden">
-        <aside className="min-h-0 overflow-y-auto border-r border-border-default bg-white p-5">
-          <section>
-            <div className="mb-2 text-[12px] font-black text-text-primary">관리자 키</div>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={adminKey}
-                onChange={(event) => setAdminKey(event.target.value)}
-                className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] font-bold outline-none transition-all focus:border-accent-pro/50 focus:bg-white focus:ring-4 focus:ring-accent-pro/10"
-                placeholder="Admin review key"
-              />
-              <button
-                type="button"
-                onClick={loadAnalysisData}
-                disabled={isLoading}
-                className="h-10 rounded-lg bg-slate-900 px-3 text-[12px] font-black text-white disabled:opacity-50"
-              >
-                확인
-              </button>
+    <AdminKeyContext.Provider value={adminKey}>
+      <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg-primary text-text-primary">
+        {showAdminKeyModal && (
+          <AdminKeyModal
+            initialKey={adminKey}
+            onConfirm={handleAdminKeyConfirm}
+            onClose={() => setShowAdminKeyModal(false)}
+          />
+        )}
+        <header className="flex h-[64px] shrink-0 items-center justify-between border-b border-border-default bg-white px-5 md:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={onBackToChat}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-text-tertiary transition-all hover:bg-slate-100 hover:text-text-primary"
+              title="채팅으로 돌아가기"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <path d="M19 12H5" />
+                <path d="M12 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div className="min-w-0">
+              <h1 className="truncate text-[16px] font-black text-text-primary">프롬프트 분석</h1>
+              <div className="truncate text-[11px] font-bold text-text-tertiary">API key별 세션 로그</div>
             </div>
-          </section>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowAdminKeyModal(true)}
+              className={`h-9 px-3 rounded-lg border text-[12px] font-black transition-all ${
+                adminKey.trim()
+                  ? 'border-accent-pro/30 bg-accent-pro/[0.06] text-accent-pro hover:bg-accent-pro/10'
+                  : 'border-slate-200 bg-slate-50 text-text-secondary hover:bg-slate-100'
+              }`}
+              title="관리자 키 설정"
+            >
+              <span className="flex items-center gap-1.5">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="M21 21l-4.35-4.35" />
+                </svg>
+                {adminKey.trim() ? '키 변경' : '관리자 키 입력'}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={loadAnalysisData}
+              disabled={isLoading}
+              className="h-9 rounded-lg bg-accent-pro px-3 text-[12px] font-black text-white transition-all hover:bg-accent-pro/90 disabled:opacity-50"
+            >
+              {isLoading ? '불러오는 중...' : '새로고침'}
+            </button>
+          </div>
+        </header>
 
-          <section className="mt-5 border-t border-slate-200 pt-5">
+        <main className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)_400px] lg:overflow-hidden">
+          <aside className="min-h-0 overflow-y-auto border-r border-border-default bg-white p-5">
+            <section>
             <label className="block">
               <span className="mb-2 block text-[12px] font-black text-text-primary">API key 검색</span>
               <input
@@ -1001,13 +1113,14 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
         <DetailPanel event={selectedEvent} session={selectedEventSession} onImageOpen={setModalImage} />
       </main>
 
-      {modalImage && (
-        <ImageModal
-          src={modalImage.url}
-          s3Key={modalImage.s3_key ?? undefined}
-          onClose={() => setModalImage(null)}
-        />
-      )}
-    </div>
+        {modalImage && (
+          <ImageModal
+            src={modalImage.url}
+            s3Key={modalImage.s3_key ?? undefined}
+            onClose={() => setModalImage(null)}
+          />
+        )}
+      </div>
+    </AdminKeyContext.Provider>
   );
 }

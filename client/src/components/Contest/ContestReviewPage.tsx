@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   generateContestSubmissionImages,
   fetchContestAssets,
@@ -18,6 +18,92 @@ interface ContestReviewPageProps {
 }
 
 const ADMIN_KEY_STORAGE = 'pa_admin_review_key';
+
+function AdminKeyModal({
+  initialKey,
+  onConfirm,
+  onClose,
+}: {
+  initialKey: string;
+  onConfirm: (key: string) => void;
+  onClose: () => void;
+}) {
+  const [key, setKey] = useState(initialKey);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (key.trim()) onConfirm(key.trim());
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div
+        className="relative z-10 w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl border border-slate-200 p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-[16px] font-black text-text-primary">관리자 키 입력</h2>
+            <p className="text-[12px] font-bold text-text-tertiary mt-0.5">심사용 페이지 접근에 필요합니다.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-text-tertiary hover:bg-slate-100 transition-all"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-[12px] font-black text-text-primary mb-1.5">Admin Review Key</label>
+            <input
+              ref={inputRef}
+              type="password"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-4 text-[13px] font-bold outline-none focus:bg-white focus:border-accent-pro/50 focus:ring-4 focus:ring-accent-pro/10 transition-all"
+              placeholder="관리자 키를 입력하세요"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 h-11 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={!key.trim()}
+              className="flex-1 h-11 rounded-xl bg-accent-pro text-white text-[13px] font-black hover:bg-accent-pro/90 transition-all disabled:opacity-40"
+            >
+              확인
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 function emptyAssets(): ContestAssetsResponse {
   return { reference_images: [], before_images: [] };
@@ -134,6 +220,7 @@ function ResultSection({ title, results }: { title: string; results: ContestGene
 
 export default function ContestReviewPage({ onBackToChat }: ContestReviewPageProps) {
   const [adminKey, setAdminKey] = useState(() => sessionStorage.getItem(ADMIN_KEY_STORAGE) ?? '');
+  const [showAdminKeyModal, setShowAdminKeyModal] = useState(() => !sessionStorage.getItem(ADMIN_KEY_STORAGE));
   const [teams, setTeams] = useState<ContestTeamSummary[]>([]);
   const [assets, setAssets] = useState<ContestAssetsResponse>(emptyAssets);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
@@ -145,6 +232,12 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleAdminKeyConfirm = useCallback((key: string) => {
+    sessionStorage.setItem(ADMIN_KEY_STORAGE, key);
+    setAdminKey(key);
+    setShowAdminKeyModal(false);
+  }, []);
 
   const generatedResults = useMemo(
     () => selectedSubmission?.results ?? [],
@@ -181,7 +274,8 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
     if (adminKey.trim()) {
       loadReviewData();
     }
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminKey]);
 
   useEffect(() => {
     const loadTeamDetail = async () => {
@@ -255,6 +349,13 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
 
   return (
     <div className="h-screen w-screen bg-bg-primary text-text-primary overflow-hidden flex flex-col">
+      {showAdminKeyModal && (
+        <AdminKeyModal
+          initialKey={adminKey}
+          onConfirm={handleAdminKeyConfirm}
+          onClose={() => setShowAdminKeyModal(false)}
+        />
+      )}
       <header className="h-[64px] shrink-0 bg-white border-b border-border-default px-5 md:px-8 flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <button
@@ -273,40 +374,39 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
             <div className="text-[11px] font-bold text-text-tertiary truncate">Prompt Arena Review</div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={loadReviewData}
-          disabled={isLoading}
-          className="h-9 px-3 rounded-lg bg-accent-pro text-white text-[12px] font-black hover:bg-accent-pro/90 transition-all disabled:opacity-50"
-        >
-          {isLoading ? '새로고침 중...' : '새로고침'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowAdminKeyModal(true)}
+            className={`h-9 px-3 rounded-lg border text-[12px] font-black transition-all ${
+              adminKey.trim()
+                ? 'border-accent-pro/30 bg-accent-pro/[0.06] text-accent-pro hover:bg-accent-pro/10'
+                : 'border-slate-200 bg-slate-50 text-text-secondary hover:bg-slate-100'
+            }`}
+            title="관리자 키 설정"
+          >
+            <span className="flex items-center gap-1.5">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                <circle cx="11" cy="11" r="8" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+              {adminKey.trim() ? '키 변경' : '관리자 키 입력'}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={loadReviewData}
+            disabled={isLoading}
+            className="h-9 px-3 rounded-lg bg-accent-pro text-white text-[12px] font-black hover:bg-accent-pro/90 transition-all disabled:opacity-50"
+          >
+            {isLoading ? '새로고침 중...' : '새로고침'}
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 overflow-hidden grid lg:grid-cols-[320px_1fr]">
         <aside className="min-h-0 overflow-y-auto bg-white border-r border-border-default p-5 space-y-5">
           <section>
-            <div className="text-[12px] font-black text-text-primary mb-2">관리자 키</div>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={adminKey}
-                onChange={(event) => setAdminKey(event.target.value)}
-                className="flex-1 min-w-0 h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] font-bold outline-none focus:bg-white focus:border-accent-pro/50 focus:ring-4 focus:ring-accent-pro/10 transition-all"
-                placeholder="Admin review key"
-              />
-              <button
-                type="button"
-                onClick={loadReviewData}
-                disabled={isLoading}
-                className="h-10 px-3 rounded-lg bg-slate-900 text-white text-[12px] font-black disabled:opacity-50"
-              >
-                확인
-              </button>
-            </div>
-          </section>
-
-          <section className="border-t border-slate-200 pt-5">
             <div className="text-[12px] font-black text-text-primary mb-2">이미지 생성</div>
             <div className="space-y-2">
               <input
