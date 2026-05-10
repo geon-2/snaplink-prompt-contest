@@ -988,7 +988,8 @@ export async function generateContestSubmissionImages(adminKey: string, apiKey: 
 /**
  * GET /api/admin/chats + /api/admin/chats/:chat_id — API key별 세션 로그 분석 데이터
  */
-export async function fetchContestAnalysisItems(adminKey: string): Promise<ContestAnalysisApiKeyItem[]> {
+// 목록만 로드 — 상세(events) 호출 없음
+export async function fetchContestAnalysisKeys(adminKey: string): Promise<ContestAnalysisApiKeyItem[]> {
   const listResp = await fetch(apiUrl('/admin/chats'), {
     credentials: 'include',
     headers: adminHeaders(adminKey),
@@ -996,38 +997,45 @@ export async function fetchContestAnalysisItems(adminKey: string): Promise<Conte
   if (!listResp.ok) throw new Error(`관리자 채팅 목록 로드 실패 (${listResp.status})`);
 
   const summaries = arrayValue(await listResp.json());
-  const details = await Promise.all(
-    summaries.map(async (summary, index) => {
-      const summaryRecord = asRecord(summary) ?? {};
-      const chatId = stringValue(summaryRecord.chat_id);
-      if (!chatId) return { ...summaryRecord, chat_id: `chat-${index + 1}`, messages: [] };
-
-      const detailResp = await fetch(apiUrl(`/admin/chats/${encodeURIComponent(chatId)}`), {
-        credentials: 'include',
-        headers: adminHeaders(adminKey),
-      });
-      if (!detailResp.ok) throw new Error(`관리자 채팅 상세 로드 실패 (${detailResp.status})`);
-
-      return {
-        ...summaryRecord,
-        ...(asRecord(await detailResp.json()) ?? {}),
-      };
-    })
-  );
 
   const grouped = new Map<string, unknown[]>();
-  details.forEach((detail, index) => {
-    const detailRecord = asRecord(detail) ?? {};
-    const summaryRecord = asRecord(summaries[index]) ?? {};
-    const apiKey = stringValue(firstDefined(detailRecord.user_api_key, summaryRecord.user_api_key)) ?? 'unknown-api-key';
+  summaries.forEach((summary, index) => {
+    const record = asRecord(summary) ?? {};
+    const apiKey = stringValue(firstDefined(record.user_api_key, record.api_key)) ?? `unknown-${index}`;
+    const chatId = stringValue(firstDefined(record.chat_id, record.id, record.session_id)) ?? `chat-${index + 1}`;
     const sessions = grouped.get(apiKey) ?? [];
-    sessions.push(detail);
+    // 빈 events로 세션 자리 확보 (session_id만 보관)
+    sessions.push({ ...record, chat_id: chatId, session_id: chatId, events: [], messages: [] });
     grouped.set(apiKey, sessions);
   });
 
   return Array.from(grouped.entries())
     .map(([apiKey, sessions], index) => normalizeAnalysisApiKeyItem({ api_key: apiKey, sessions }, index))
     .sort((a, b) => a.api_key.localeCompare(b.api_key));
+}
+
+// 특정 API key의 세션들 상세 로드
+export async function fetchContestAnalysisKeyDetail(
+  adminKey: string,
+  item: ContestAnalysisApiKeyItem,
+): Promise<ContestAnalysisApiKeyItem> {
+  const sessions = await Promise.all(
+    item.sessions.map(async (session, index) => {
+      const sessionId = session.session_id;
+      const resp = await fetch(apiUrl(`/admin/chats/${encodeURIComponent(sessionId)}`), {
+        credentials: 'include',
+        headers: adminHeaders(adminKey),
+      });
+      if (!resp.ok) throw new Error(`채팅 상세 로드 실패 (${resp.status})`);
+      const data = asRecord(await resp.json()) ?? {};
+      return normalizeAnalysisSession({ ...data, session_id: sessionId }, index);
+    }),
+  );
+
+  return normalizeAnalysisApiKeyItem(
+    { api_key: item.api_key, masked_api_key: item.masked_api_key, sessions },
+    0,
+  );
 }
 
 /**

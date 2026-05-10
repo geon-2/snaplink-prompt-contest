@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { fetchContestAnalysisItems } from '../../services/api';
+import { fetchContestAnalysisKeys, fetchContestAnalysisKeyDetail } from '../../services/api';
 import type {
   ContestAnalysisApiKeyItem,
   ContestAnalysisEvent,
@@ -744,8 +744,11 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
   const [eventFilter, setEventFilter] = useState<EventFilter>('all');
   const [showMergedTimeline, setShowMergedTimeline] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modalImage, setModalImage] = useState<ContestAnalysisImage | null>(null);
+
+  const loadedKeysRef = useRef(new Set<string>());
 
   const handleAdminKeyConfirm = useCallback((key: string) => {
     sessionStorage.setItem(ADMIN_KEY_STORAGE, key);
@@ -762,9 +765,10 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
 
     setIsLoading(true);
     setError(null);
+    loadedKeysRef.current.clear();
     try {
       sessionStorage.setItem(ADMIN_KEY_STORAGE, trimmedKey);
-      const nextItems = await fetchContestAnalysisItems(trimmedKey);
+      const nextItems = await fetchContestAnalysisKeys(trimmedKey);
       setItems(nextItems);
       setSelectedApiKey((current) => {
         if (current && nextItems.some((item) => item.api_key === current)) return current;
@@ -783,6 +787,40 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminKey]);
+
+  // API key 선택 시 해당 key의 상세만 로드
+  useEffect(() => {
+    if (!selectedApiKey) return;
+    const trimmedKey = adminKey.trim();
+    if (!trimmedKey) return;
+    if (loadedKeysRef.current.has(selectedApiKey)) return;
+
+    const item = items.find((i) => i.api_key === selectedApiKey);
+    if (!item || item.sessions.length === 0) {
+      loadedKeysRef.current.add(selectedApiKey);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingDetail(true);
+    setError(null);
+
+    fetchContestAnalysisKeyDetail(trimmedKey, item)
+      .then((updatedItem) => {
+        if (cancelled) return;
+        loadedKeysRef.current.add(selectedApiKey);
+        setItems((prev) => prev.map((i) => (i.api_key === selectedApiKey ? updatedItem : i)));
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : '상세 데이터를 불러오지 못했습니다.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingDetail(false);
+      });
+
+    return () => { cancelled = true; };
+  // items를 의존성에 넣되, loadedKeysRef로 중복 호출 방지
+  }, [selectedApiKey, adminKey, items]);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.api_key === selectedApiKey) ?? null,
@@ -994,6 +1032,13 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
             {error && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[12px] font-bold text-red-600">
                 {error}
+              </div>
+            )}
+
+            {isLoadingDetail && (
+              <div className="flex h-12 items-center gap-2 rounded-lg border border-accent-pro/20 bg-accent-pro/[0.04] px-4 text-[12px] font-bold text-accent-pro">
+                <div className="w-4 h-4 border-2 border-accent-pro/30 border-t-accent-pro rounded-full animate-spin shrink-0" />
+                세션 상세 데이터를 불러오는 중...
               </div>
             )}
 
