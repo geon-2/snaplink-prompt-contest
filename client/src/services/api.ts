@@ -866,9 +866,10 @@ export async function fetchContestMe(): Promise<ContestMe> {
 /**
  * GET /api/shared-image — 참가자에게 제공되는 관리자 공유 이미지
  */
-export async function fetchContestAssets(): Promise<ContestAssetsResponse> {
+export async function fetchContestAssets(adminKey?: string): Promise<ContestAssetsResponse> {
   const resp = await fetch(apiUrl('/shared-image'), {
     credentials: 'include',
+    headers: adminKey ? adminHeaders(adminKey) : {},
   });
   if (resp.status === 401 || resp.status === 404) return emptyContestAssets();
   if (!resp.ok) throw new Error(await readErrorDetail(resp, '대회 이미지 로드 실패'));
