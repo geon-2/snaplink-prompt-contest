@@ -27,7 +27,7 @@ const ADMIN_KEY_STORAGE = 'pa_admin_review_key';
 const TEAM_REGISTRATIONS_STORAGE = 'pa_team_registrations';
 
 function loadRegistrations(): TeamRegistration[] {
-  const envJson = import.meta.env.VITE_CONTEST_TEAMS_JSON;
+  const envJson = process.env.CONTEST_TEAMS_JSON;
   if (envJson) {
     try {
       const parsed = JSON.parse(envJson);
@@ -46,7 +46,7 @@ function loadRegistrations(): TeamRegistration[] {
 }
 
 const TEAMS_FROM_ENV = (() => {
-  const envJson = import.meta.env.VITE_CONTEST_TEAMS_JSON;
+  const envJson = process.env.CONTEST_TEAMS_JSON;
   if (!envJson) return false;
   try {
     const parsed = JSON.parse(envJson);
@@ -58,6 +58,24 @@ function apiKeyMatchesPreview(apiKey: string, preview: string): boolean {
   if (!apiKey.trim() || !preview) return false;
   const suffix = apiKey.trim().slice(-4).toUpperCase();
   return preview.toUpperCase().includes(suffix);
+}
+
+function maskApiKey(key: string): string {
+  const trimmed = key.trim();
+  if (!trimmed) return '-';
+  if (trimmed.length <= 8) return '****';
+  return `${trimmed.slice(0, 10)}...${trimmed.slice(-4)}`;
+}
+
+function downloadJson(data: unknown, filename: string) {
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 async function downloadUrl(url: string, filename: string) {
@@ -152,9 +170,13 @@ function TeamRegistrationModal({
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
+  const validRows = rows.filter((r) => r.apiKey.trim() || r.teamName.trim());
+
+  const handleDownload = () => downloadJson(validRows, 'contest-teams.json');
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onConfirm(rows.filter((r) => r.apiKey.trim() || r.teamName.trim()));
+    onConfirm(validRows);
   };
 
   const addRow = () => setRows((prev) => [...prev, { apiKey: '', teamName: '' }]);
@@ -166,11 +188,16 @@ function TeamRegistrationModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <div className="relative z-10 w-full max-w-lg mx-4 bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-1 shrink-0">
+      <div className="relative z-10 w-full max-w-lg mx-4 bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4 shrink-0">
           <div>
-            <h2 className="text-[16px] font-black text-text-primary">팀 등록</h2>
-            <p className="text-[12px] font-bold text-text-tertiary mt-0.5">제출이 감지되면 이미지를 자동으로 생성합니다.</p>
+            <h2 className="text-[16px] font-black text-text-primary">팀 설정</h2>
+            <p className="text-[12px] font-bold text-text-tertiary mt-0.5">
+              {TEAMS_FROM_ENV
+                ? '환경변수(CONTEST_TEAMS_JSON)에서 로드됨 — 읽기 전용'
+                : '제출이 감지되면 이미지를 자동으로 생성합니다.'}
+            </p>
           </div>
           <button type="button" onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-text-tertiary hover:bg-slate-100 transition-all">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -178,39 +205,92 @@ function TeamRegistrationModal({
             </svg>
           </button>
         </div>
-        <div className="grid grid-cols-[120px_1fr_32px] gap-2 mt-4 mb-2 shrink-0 px-1">
-          <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider">팀 이름</div>
-          <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider">API key</div>
-          <div />
-        </div>
-        <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1">
-          <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {rows.map((row, index) => (
-              <div key={index} className="grid grid-cols-[120px_1fr_32px] gap-2 items-center">
-                <input type="text" value={row.teamName} onChange={(e) => updateRow(index, 'teamName', e.target.value)}
-                  className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] font-bold outline-none focus:border-accent-pro/50 focus:bg-white focus:ring-4 focus:ring-accent-pro/10 transition-all"
-                  placeholder="예) 1팀" />
-                <input type="password" value={row.apiKey} onChange={(e) => updateRow(index, 'apiKey', e.target.value)}
-                  className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 font-mono text-[12px] font-bold outline-none focus:border-accent-pro/50 focus:bg-white focus:ring-4 focus:ring-accent-pro/10 transition-all"
-                  placeholder="sk-ant-..." />
-                <button type="button" onClick={() => removeRow(index)}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg text-text-tertiary hover:bg-red-50 hover:text-red-500 transition-all">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
+
+        {/* Table */}
+        {validRows.length > 0 && (
+          <div className="mb-4 rounded-lg border border-slate-200 overflow-hidden shrink-0">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="px-3 py-2 text-[10px] font-black text-text-tertiary uppercase tracking-wider w-[110px]">팀 이름</th>
+                  <th className="px-3 py-2 text-[10px] font-black text-text-tertiary uppercase tracking-wider">API Key</th>
+                </tr>
+              </thead>
+              <tbody>
+                {validRows.map((row, i) => (
+                  <tr key={i} className={i > 0 ? 'border-t border-slate-100' : ''}>
+                    <td className="px-3 py-2 text-[13px] font-bold text-text-primary">{row.teamName || '-'}</td>
+                    <td className="px-3 py-2 font-mono text-[11px] text-text-secondary">{maskApiKey(row.apiKey)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Edit form — only when not from env var */}
+        {!TEAMS_FROM_ENV && (
+          <>
+            <div className="grid grid-cols-[120px_1fr_32px] gap-2 mb-2 shrink-0 px-1">
+              <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider">팀 이름</div>
+              <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider">API key</div>
+              <div />
+            </div>
+            <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1">
+              <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+                {rows.map((row, index) => (
+                  <div key={index} className="grid grid-cols-[120px_1fr_32px] gap-2 items-center">
+                    <input type="text" value={row.teamName} onChange={(e) => updateRow(index, 'teamName', e.target.value)}
+                      className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] font-bold outline-none focus:border-accent-pro/50 focus:bg-white focus:ring-4 focus:ring-accent-pro/10 transition-all"
+                      placeholder="예) 1팀" />
+                    <input type="password" value={row.apiKey} onChange={(e) => updateRow(index, 'apiKey', e.target.value)}
+                      className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 font-mono text-[12px] font-bold outline-none focus:border-accent-pro/50 focus:bg-white focus:ring-4 focus:ring-accent-pro/10 transition-all"
+                      placeholder="sk-ant-..." />
+                    <button type="button" onClick={() => removeRow(index)}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg text-text-tertiary hover:bg-red-50 hover:text-red-500 transition-all">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+              <button type="button" onClick={addRow}
+                className="mt-3 h-9 w-full rounded-lg border border-dashed border-slate-300 text-text-tertiary text-[12px] font-black hover:border-accent-pro/40 hover:text-accent-pro transition-all shrink-0">
+                + 팀 추가
+              </button>
+              <div className="flex gap-2 mt-3 shrink-0">
+                <button type="button" onClick={handleDownload}
+                  className="h-11 px-4 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all flex items-center gap-1.5">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  JSON 다운로드
+                </button>
+                <button type="button" onClick={onClose} className="flex-1 h-11 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all">취소</button>
+                <button type="submit" className="flex-1 h-11 rounded-xl bg-accent-pro text-white text-[13px] font-black hover:bg-accent-pro/90 transition-all">저장</button>
+              </div>
+            </form>
+          </>
+        )}
+
+        {/* Read-only footer when from env var */}
+        {TEAMS_FROM_ENV && (
+          <div className="flex gap-2 shrink-0">
+            <button type="button" onClick={handleDownload}
+              className="h-11 px-4 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all flex items-center gap-1.5">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              JSON 다운로드
+            </button>
+            <button type="button" onClick={onClose} className="flex-1 h-11 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all">닫기</button>
           </div>
-          <button type="button" onClick={addRow}
-            className="mt-3 h-9 w-full rounded-lg border border-dashed border-slate-300 text-text-tertiary text-[12px] font-black hover:border-accent-pro/40 hover:text-accent-pro transition-all shrink-0">
-            + 팀 추가
-          </button>
-          <div className="flex gap-2 mt-3 shrink-0">
-            <button type="button" onClick={onClose} className="flex-1 h-11 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all">취소</button>
-            <button type="submit" className="flex-1 h-11 rounded-xl bg-accent-pro text-white text-[13px] font-black hover:bg-accent-pro/90 transition-all">저장</button>
-          </div>
-        </form>
+        )}
       </div>
     </div>
   );
@@ -630,14 +710,12 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
               {adminKey.trim() ? '키 변경' : '관리자 키 입력'}
             </span>
           </button>
-          {!TEAMS_FROM_ENV && (
-            <button type="button" onClick={() => setShowRegistrationModal(true)}
-              className={`h-9 px-3 rounded-lg border text-[12px] font-black transition-all ${
-                teamRegistrations.some((r) => r.apiKey.trim()) ? 'border-slate-300 bg-white text-text-primary hover:bg-slate-50' : 'border-slate-200 bg-slate-50 text-text-secondary hover:bg-slate-100'
-              }`}>
-              팀 등록
-            </button>
-          )}
+          <button type="button" onClick={() => setShowRegistrationModal(true)}
+            className={`h-9 px-3 rounded-lg border text-[12px] font-black transition-all ${
+              teamRegistrations.some((r) => r.apiKey.trim()) ? 'border-slate-300 bg-white text-text-primary hover:bg-slate-50' : 'border-slate-200 bg-slate-50 text-text-secondary hover:bg-slate-100'
+            }`}>
+            팀 설정
+          </button>
           <button type="button" onClick={loadReviewData} disabled={isLoading}
             className="h-9 px-3 rounded-lg bg-accent-pro text-white text-[12px] font-black hover:bg-accent-pro/90 transition-all disabled:opacity-50">
             {isLoading ? '새로고침 중...' : '새로고침'}

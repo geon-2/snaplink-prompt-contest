@@ -9,6 +9,7 @@ export default defineConfig(() => {
     define: {
       'process.env.S3_BUCKET': JSON.stringify(process.env.S3_BUCKET || ''),
       'process.env.AWS_REGION': JSON.stringify(process.env.AWS_REGION || ''),
+      'process.env.CONTEST_TEAMS_JSON': JSON.stringify(process.env.CONTEST_TEAMS_JSON || ''),
     },
   }
 })
