@@ -184,6 +184,7 @@ export interface ContestMe {
 export interface ContestTeamSummary {
   team_id: string;
   team_name: string;
+  api_key_preview: string;
   submitted: boolean;
   submitted_at?: string | null;
   result_count?: number | null;
