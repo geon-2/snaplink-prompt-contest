@@ -17,8 +17,31 @@ interface ContestReviewPageProps {
   onBackToChat: () => void;
 }
 
+interface TeamRegistration {
+  apiKey: string;
+  teamName: string;
+}
+
 const ADMIN_KEY_STORAGE = 'pa_admin_review_key';
-const TEAM_NAMES_STORAGE = 'pa_team_names_map';
+const TEAM_REGISTRATIONS_STORAGE = 'pa_team_registrations';
+
+function loadRegistrations(): TeamRegistration[] {
+  try {
+    const raw = localStorage.getItem(TEAM_REGISTRATIONS_STORAGE);
+    if (!raw) return [{ apiKey: '', teamName: '' }];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return [{ apiKey: '', teamName: '' }];
+    return parsed;
+  } catch {
+    return [{ apiKey: '', teamName: '' }];
+  }
+}
+
+function apiKeyMatchesPreview(apiKey: string, preview: string): boolean {
+  if (!apiKey.trim() || !preview) return false;
+  const suffix = apiKey.trim().slice(-4).toUpperCase();
+  return preview.toUpperCase().includes(suffix);
+}
 
 function AdminKeyModal({
   initialKey,
@@ -106,18 +129,18 @@ function AdminKeyModal({
   );
 }
 
-function TeamNamesModal({
-  teams,
-  initialMap,
+function TeamRegistrationModal({
+  initialRegistrations,
   onConfirm,
   onClose,
 }: {
-  teams: ContestTeamSummary[];
-  initialMap: Record<string, string>;
-  onConfirm: (map: Record<string, string>) => void;
+  initialRegistrations: TeamRegistration[];
+  onConfirm: (registrations: TeamRegistration[]) => void;
   onClose: () => void;
 }) {
-  const [nameMap, setNameMap] = useState<Record<string, string>>(() => ({ ...initialMap }));
+  const [rows, setRows] = useState<TeamRegistration[]>(() =>
+    initialRegistrations.length > 0 ? [...initialRegistrations] : [{ apiKey: '', teamName: '' }],
+  );
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -129,8 +152,16 @@ function TeamNamesModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onConfirm(nameMap);
+    onConfirm(rows.filter((r) => r.apiKey.trim() || r.teamName.trim()));
   };
+
+  const addRow = () => setRows((prev) => [...prev, { apiKey: '', teamName: '' }]);
+
+  const removeRow = (index: number) =>
+    setRows((prev) => (prev.length === 1 ? [{ apiKey: '', teamName: '' }] : prev.filter((_, i) => i !== index)));
+
+  const updateRow = (index: number, field: keyof TeamRegistration, value: string) =>
+    setRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
 
   return (
     <div
@@ -139,13 +170,15 @@ function TeamNamesModal({
     >
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
-        className="relative z-10 w-full max-w-md mx-4 bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 max-h-[80vh] flex flex-col"
+        className="relative z-10 w-full max-w-lg mx-4 bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-5 shrink-0">
+        <div className="flex items-center justify-between mb-1 shrink-0">
           <div>
-            <h2 className="text-[16px] font-black text-text-primary">팀 이름 설정</h2>
-            <p className="text-[12px] font-bold text-text-tertiary mt-0.5">API key에 팀 이름을 매핑합니다.</p>
+            <h2 className="text-[16px] font-black text-text-primary">팀 등록</h2>
+            <p className="text-[12px] font-bold text-text-tertiary mt-0.5">
+              제출이 감지되면 이미지를 자동으로 생성합니다.
+            </p>
           </div>
           <button
             type="button"
@@ -158,31 +191,54 @@ function TeamNamesModal({
             </svg>
           </button>
         </div>
+
+        <div className="grid grid-cols-[120px_1fr_32px] gap-2 mt-4 mb-2 shrink-0 px-1">
+          <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider">팀 이름</div>
+          <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider">API key</div>
+          <div />
+        </div>
+
         <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1">
-          {teams.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-[12px] font-bold text-text-tertiary rounded-lg border border-dashed border-slate-200 bg-slate-50 py-8">
-              먼저 데이터를 새로고침하세요.
-            </div>
-          ) : (
-            <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-              {teams.map((team) => (
-                <div key={team.team_id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[10px] font-black text-text-tertiary uppercase tracking-wider mb-0.5">API key</div>
-                    <div className="font-mono text-[12px] font-bold text-text-primary truncate">{team.api_key_preview}</div>
-                  </div>
-                  <input
-                    type="text"
-                    value={nameMap[team.team_id] ?? ''}
-                    onChange={(e) => setNameMap((prev) => ({ ...prev, [team.team_id]: e.target.value }))}
-                    className="w-28 h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-bold outline-none focus:border-accent-pro/50 focus:ring-4 focus:ring-accent-pro/10 transition-all"
-                    placeholder="예) 1팀"
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-2 mt-4 shrink-0">
+          <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+            {rows.map((row, index) => (
+              <div key={index} className="grid grid-cols-[120px_1fr_32px] gap-2 items-center">
+                <input
+                  type="text"
+                  value={row.teamName}
+                  onChange={(e) => updateRow(index, 'teamName', e.target.value)}
+                  className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] font-bold outline-none focus:border-accent-pro/50 focus:bg-white focus:ring-4 focus:ring-accent-pro/10 transition-all"
+                  placeholder="예) 1팀"
+                />
+                <input
+                  type="password"
+                  value={row.apiKey}
+                  onChange={(e) => updateRow(index, 'apiKey', e.target.value)}
+                  className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 font-mono text-[12px] font-bold outline-none focus:border-accent-pro/50 focus:bg-white focus:ring-4 focus:ring-accent-pro/10 transition-all"
+                  placeholder="sk-ant-..."
+                />
+                <button
+                  type="button"
+                  onClick={() => removeRow(index)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-text-tertiary hover:bg-red-50 hover:text-red-500 transition-all"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={addRow}
+            className="mt-3 h-9 w-full rounded-lg border border-dashed border-slate-300 text-text-tertiary text-[12px] font-black hover:border-accent-pro/40 hover:text-accent-pro transition-all shrink-0"
+          >
+            + 팀 추가
+          </button>
+
+          <div className="flex gap-2 mt-3 shrink-0">
             <button
               type="button"
               onClick={onClose}
@@ -319,21 +375,25 @@ function ResultSection({ title, results }: { title: string; results: ContestGene
 export default function ContestReviewPage({ onBackToChat }: ContestReviewPageProps) {
   const [adminKey, setAdminKey] = useState(() => sessionStorage.getItem(ADMIN_KEY_STORAGE) ?? '');
   const [showAdminKeyModal, setShowAdminKeyModal] = useState(() => !sessionStorage.getItem(ADMIN_KEY_STORAGE));
-  const [showTeamNamesModal, setShowTeamNamesModal] = useState(false);
-  const [teamNamesMap, setTeamNamesMap] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(localStorage.getItem(TEAM_NAMES_STORAGE) ?? '{}'); } catch { return {}; }
-  });
+  const [showRegistrationModal, setShowRegistrationModal] = useState(false);
+  const [teamRegistrations, setTeamRegistrations] = useState<TeamRegistration[]>(loadRegistrations);
   const [teams, setTeams] = useState<ContestTeamSummary[]>([]);
   const [assets, setAssets] = useState<ContestAssetsResponse>(emptyAssets);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [selectedSubmission, setSelectedSubmission] = useState<ContestSubmission | null>(null);
   const [sharedImageFile, setSharedImageFile] = useState<File | null>(null);
-  const [generationApiKey, setGenerationApiKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Refs for use inside intervals (avoid stale closures)
+  const adminKeyRef = useRef(adminKey);
+  const teamRegistrationsRef = useRef(teamRegistrations);
+  const autoGeneratedRef = useRef(new Set<string>());
+
+  useEffect(() => { adminKeyRef.current = adminKey; }, [adminKey]);
+  useEffect(() => { teamRegistrationsRef.current = teamRegistrations; }, [teamRegistrations]);
 
   const handleAdminKeyConfirm = useCallback((key: string) => {
     sessionStorage.setItem(ADMIN_KEY_STORAGE, key);
@@ -341,19 +401,27 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
     setShowAdminKeyModal(false);
   }, []);
 
-  const handleTeamNamesConfirm = useCallback((map: Record<string, string>) => {
-    localStorage.setItem(TEAM_NAMES_STORAGE, JSON.stringify(map));
-    setTeamNamesMap(map);
-    setShowTeamNamesModal(false);
+  const handleRegistrationsConfirm = useCallback((registrations: TeamRegistration[]) => {
+    localStorage.setItem(TEAM_REGISTRATIONS_STORAGE, JSON.stringify(registrations));
+    setTeamRegistrations(registrations);
+    setShowRegistrationModal(false);
   }, []);
 
-  const resolveTeamName = useCallback((teamId: string, fallback: string) => {
-    return teamNamesMap[teamId]?.trim() || fallback;
-  }, [teamNamesMap]);
+  const resolveTeamName = useCallback((apiKeyPreview: string, fallback: string) => {
+    const reg = teamRegistrations.find(
+      (r) => r.apiKey.trim() && apiKeyMatchesPreview(r.apiKey, apiKeyPreview),
+    );
+    return reg?.teamName.trim() || fallback;
+  }, [teamRegistrations]);
 
   const generatedResults = useMemo(
     () => selectedSubmission?.results ?? [],
     [selectedSubmission],
+  );
+
+  const selectedTeamPreview = useMemo(
+    () => teams.find((t) => t.team_id === selectedSubmission?.team_id)?.api_key_preview ?? '',
+    [teams, selectedSubmission],
   );
 
   const loadReviewData = useCallback(async () => {
@@ -382,6 +450,7 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
     }
   }, [adminKey, selectedTeamId]);
 
+  // Initial load
   useEffect(() => {
     if (adminKey.trim()) {
       loadReviewData();
@@ -389,6 +458,70 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminKey]);
 
+  // Auto-polling + auto-generate
+  useEffect(() => {
+    if (!adminKey.trim()) return;
+
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      const trimmedKey = adminKeyRef.current.trim();
+      if (!trimmedKey) return;
+
+      try {
+        const teamItems = await fetchContestReviewTeams(trimmedKey);
+        if (cancelled) return;
+        setTeams(teamItems);
+
+        // Pre-populate ref for teams that are already past the 'submitted' stage
+        for (const team of teamItems) {
+          if (team.status !== 'submitted') {
+            const matched = teamRegistrationsRef.current.find(
+              (r) => r.apiKey.trim() && apiKeyMatchesPreview(r.apiKey, team.api_key_preview),
+            );
+            if (matched) autoGeneratedRef.current.add(matched.apiKey.trim());
+          }
+        }
+
+        // Auto-generate for newly submitted teams
+        for (const reg of teamRegistrationsRef.current) {
+          if (cancelled) break;
+          const apiKey = reg.apiKey.trim();
+          if (!apiKey || autoGeneratedRef.current.has(apiKey)) continue;
+
+          const match = teamItems.find(
+            (team) => team.status === 'submitted' && apiKeyMatchesPreview(apiKey, team.api_key_preview),
+          );
+          if (!match) continue;
+
+          autoGeneratedRef.current.add(apiKey);
+          try {
+            const submission = await generateContestSubmissionImages(trimmedKey, apiKey);
+            if (cancelled) break;
+            setSelectedTeamId(submission.team_id);
+            setSelectedSubmission(submission);
+            const refreshed = await fetchContestReviewTeams(trimmedKey);
+            if (!cancelled) setTeams(refreshed);
+          } catch {
+            // silent fail, no retry in this session
+          }
+        }
+      } catch {
+        // ignore polling errors silently
+      }
+    };
+
+    poll();
+    const interval = setInterval(poll, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminKey]);
+
+  // Load team detail when selection changes
   useEffect(() => {
     const loadTeamDetail = async () => {
       const trimmedKey = adminKey.trim();
@@ -432,33 +565,6 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
     }
   }, [adminKey, sharedImageFile]);
 
-  const handleGenerateImages = useCallback(async () => {
-    const trimmedKey = adminKey.trim();
-    const targetApiKey = generationApiKey.trim();
-    if (!trimmedKey) {
-      setError('관리자 키를 입력해주세요.');
-      return;
-    }
-    if (!targetApiKey) {
-      setError('이미지를 생성할 사용자 API key를 입력해주세요.');
-      return;
-    }
-
-    setIsGenerating(true);
-    setError(null);
-    try {
-      const submission = await generateContestSubmissionImages(trimmedKey, targetApiKey);
-      setSelectedTeamId(submission.team_id);
-      setSelectedSubmission(submission);
-      setGenerationApiKey('');
-      setTeams(await fetchContestReviewTeams(trimmedKey));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '이미지 생성 요청에 실패했습니다.');
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [adminKey, generationApiKey]);
-
   return (
     <div className="h-screen w-screen bg-bg-primary text-text-primary overflow-hidden flex flex-col">
       {showAdminKeyModal && (
@@ -468,12 +574,11 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
           onClose={() => setShowAdminKeyModal(false)}
         />
       )}
-      {showTeamNamesModal && (
-        <TeamNamesModal
-          teams={teams}
-          initialMap={teamNamesMap}
-          onConfirm={handleTeamNamesConfirm}
-          onClose={() => setShowTeamNamesModal(false)}
+      {showRegistrationModal && (
+        <TeamRegistrationModal
+          initialRegistrations={teamRegistrations}
+          onConfirm={handleRegistrationsConfirm}
+          onClose={() => setShowRegistrationModal(false)}
         />
       )}
       <header className="h-[64px] shrink-0 bg-white border-b border-border-default px-5 md:px-8 flex items-center justify-between">
@@ -515,11 +620,15 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
           </button>
           <button
             type="button"
-            onClick={() => setShowTeamNamesModal(true)}
-            className="h-9 px-3 rounded-lg border border-slate-200 bg-slate-50 text-text-secondary text-[12px] font-black hover:bg-slate-100 transition-all"
-            title="팀 이름 설정"
+            onClick={() => setShowRegistrationModal(true)}
+            className={`h-9 px-3 rounded-lg border text-[12px] font-black transition-all ${
+              teamRegistrations.some((r) => r.apiKey.trim())
+                ? 'border-slate-300 bg-white text-text-primary hover:bg-slate-50'
+                : 'border-slate-200 bg-slate-50 text-text-secondary hover:bg-slate-100'
+            }`}
+            title="팀 등록"
           >
-            팀 이름 설정
+            팀 등록
           </button>
           <button
             type="button"
@@ -535,27 +644,6 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
       <main className="flex-1 overflow-hidden grid lg:grid-cols-[320px_1fr]">
         <aside className="min-h-0 overflow-y-auto bg-white border-r border-border-default p-5 space-y-5">
           <section>
-            <div className="text-[12px] font-black text-text-primary mb-2">이미지 생성</div>
-            <div className="space-y-2">
-              <input
-                type="password"
-                value={generationApiKey}
-                onChange={(event) => setGenerationApiKey(event.target.value)}
-                className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] font-bold outline-none transition-all focus:border-accent-pro/50 focus:bg-white focus:ring-4 focus:ring-accent-pro/10"
-                placeholder="사용자 API key 원문"
-              />
-              <button
-                type="button"
-                onClick={handleGenerateImages}
-                disabled={isGenerating}
-                className="w-full h-10 rounded-lg bg-slate-900 text-white text-[12px] font-black disabled:opacity-50"
-              >
-                {isGenerating ? '생성 요청 중...' : '이미지 2장 생성'}
-              </button>
-            </div>
-          </section>
-
-          <section className="border-t border-slate-200 pt-5">
             <div className="flex items-center justify-between mb-3">
               <div className="text-[12px] font-black text-text-primary">공유 이미지</div>
               <span className="text-[10px] font-bold text-text-tertiary">
@@ -589,7 +677,15 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
           </section>
 
           <section className="border-t border-slate-200 pt-5">
-            <div className="text-[12px] font-black text-text-primary mb-3">제출 목록</div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[12px] font-black text-text-primary">제출 목록</div>
+              {adminKey.trim() && (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-accent-pro">
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent-pro animate-pulse" />
+                  자동 감지 중
+                </span>
+              )}
+            </div>
             <div className="space-y-1.5">
               {teams.length === 0 ? (
                 <div className="h-24 rounded-lg border border-dashed border-slate-200 bg-slate-50 flex items-center justify-center text-[12px] font-bold text-text-tertiary">
@@ -609,7 +705,7 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
                   >
                     <div className="flex items-center justify-between gap-2 mb-1.5">
                       <span className="text-[12px] font-black text-text-primary truncate">
-                        {resolveTeamName(team.team_id, team.team_name)}
+                        {resolveTeamName(team.api_key_preview, team.team_name)}
                       </span>
                       <StatusBadge submitted={team.submitted} />
                     </div>
@@ -637,8 +733,8 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
                 <div className="bg-white border border-slate-200 rounded-lg p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
                     <div className="text-[18px] font-black text-text-primary">
-                    {resolveTeamName(selectedSubmission.team_id, selectedSubmission.team_name)}
-                  </div>
+                      {resolveTeamName(selectedTeamPreview, selectedSubmission.team_name)}
+                    </div>
                     <div className="text-[12px] font-bold text-text-tertiary mt-1">{formatDateTime(selectedSubmission.submitted_at)}</div>
                   </div>
                   <div className="px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-[12px] font-black text-text-secondary">

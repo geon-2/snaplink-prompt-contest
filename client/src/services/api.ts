@@ -530,6 +530,7 @@ function normalizeContestTeamSummary(raw: unknown, fallbackId: string): ContestT
     team_id: teamId,
     team_name: stringValue(firstDefined(record.team_name, record.api_key_preview)) ?? `${teamId} 제출`,
     api_key_preview: apiKeyPreview,
+    status,
     submitted: booleanValue(record.submitted) ?? status !== 'not_submitted',
     submitted_at: stringValue(firstDefined(record.submitted_at, record.created_at, record.updated_at)) ?? null,
     result_count: numericValue(record.result_count) ?? imageCount,
