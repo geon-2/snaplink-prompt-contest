@@ -144,8 +144,11 @@ def generate_final_submission_images(
     db_session.commit()
     db_session.refresh(submission)
 
+    response = _admin_final_submission_response(submission, storage_service)
+    engine = db_session.get_bind()
+    db_session.close()
     worker_session_factory = sessionmaker(
-        bind=db_session.get_bind(),
+        bind=engine,
         autoflush=False,
         autocommit=False,
         expire_on_commit=False,
@@ -159,7 +162,7 @@ def generate_final_submission_images(
         gemini_service,
         storage_service,
     )
-    return _admin_final_submission_response(submission, storage_service)
+    return response
 
 
 def _generate_images_for_submission(

@@ -123,9 +123,12 @@ def chat_completion(
         requested_uuid=payload.uuid,
         db_session=db_session,
     )
+    user_api_key = user.api_key
     pending_uploads = _persist_uploads(uploads=uploads, temp_upload_dir=settings.temp_upload_dir)
+    engine = db_session.get_bind()
+    db_session.close()
     worker_session_factory = sessionmaker(
-        bind=db_session.get_bind(),
+        bind=engine,
         autoflush=False,
         autocommit=False,
         expire_on_commit=False,
@@ -134,7 +137,7 @@ def chat_completion(
     startup_queue: Queue[StreamStartupResult] = Queue(maxsize=1)
 
     def process_request() -> None:
-        api_key_hash = hash_api_key(user.api_key)
+        api_key_hash = hash_api_key(user_api_key)
         request_id = uuid4()
         model_name = gemini_service.image_model if payload.type is ChatCompletionType.IMAGE else gemini_service.model
         startup_notified = False
@@ -156,7 +159,7 @@ def chat_completion(
                     storage_service=storage_service,
                     settings=settings,
                     uploads=pending_uploads,
-                    user_api_key=user.api_key,
+                    user_api_key=user_api_key,
                     user_uuid=payload.uuid,
                     chat=chat,
                     message_type=payload.type.value,
@@ -174,7 +177,7 @@ def chat_completion(
                 contents = _build_gemini_contents(
                     db_session=worker_session,
                     chat_id=chat.chat_id,
-                    user_api_key=user.api_key,
+                    user_api_key=user_api_key,
                     settings=settings,
                     gemini_service=gemini_service,
                     storage_service=storage_service,
@@ -189,13 +192,13 @@ def chat_completion(
                 usage_metadata = GeminiUsageMetadata()
                 if payload.type is ChatCompletionType.IMAGE:
                     gemini_events = gemini_service.generate_content(
-                        api_key=user.api_key,
+                        api_key=user_api_key,
                         model=model_name,
                         payload=response_payload,
                     )
                 else:
                     gemini_events = gemini_service.stream_generate_content(
-                        api_key=user.api_key,
+                        api_key=user_api_key,
                         model=model_name,
                         payload=response_payload,
                         on_open=lambda: notify_startup(StreamStartupResult(ok=True)),
@@ -220,7 +223,7 @@ def chat_completion(
                     image_message_id = uuid4()
                     image_key = _build_output_s3_key(
                         settings=settings,
-                        user_api_key=user.api_key,
+                        user_api_key=user_api_key,
                         chat_id=chat.chat_id,
                         message_id=image_message_id,
                         index=len(assistant_images),
