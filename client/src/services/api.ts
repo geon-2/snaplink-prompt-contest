@@ -534,20 +534,9 @@ function normalizeContestTeamSummary(raw: unknown, fallbackId: string): ContestT
   };
 }
 
-// function normalizeAdminKeyInput(adminKey: string): string {
-//   const trimmed = adminKey.trim();
-//   const first = trimmed[0];
-//   const last = trimmed[trimmed.length - 1];
-//   if (trimmed.length >= 2 && ((first === '"' && last === '"') || (first === "'" && last === "'"))) {
-//     return trimmed.slice(1, -1).trim();
-//   }
-//   return trimmed;
-// }
-
 function adminHeaders(adminKey: string): Record<string, string> {
-  // const normalizedKey = normalizeAdminKeyInput(adminKey);
   return {
-    'X-Admin-Review-Key': adminKey,
+    'X-Admin-Review-Key': encodeURIComponent(adminKey),
   };
 }
 
