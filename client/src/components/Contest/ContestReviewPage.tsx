@@ -24,7 +24,6 @@ interface TeamRegistration {
 }
 
 const ADMIN_KEY_STORAGE = 'pa_admin_review_key';
-const TEAM_REGISTRATIONS_STORAGE = 'pa_team_registrations';
 
 function loadRegistrations(): TeamRegistration[] {
   const envJson = process.env.CONTEST_TEAMS_JSON;
@@ -32,17 +31,9 @@ function loadRegistrations(): TeamRegistration[] {
     try {
       const parsed = JSON.parse(envJson);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    } catch { /* fall through to localStorage */ }
+    } catch { /* ignore */ }
   }
-  try {
-    const raw = localStorage.getItem(TEAM_REGISTRATIONS_STORAGE);
-    if (!raw) return [{ apiKey: '', teamName: '' }];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) return [{ apiKey: '', teamName: '' }];
-    return parsed;
-  } catch {
-    return [{ apiKey: '', teamName: '' }];
-  }
+  return [{ apiKey: '', teamName: '' }];
 }
 
 const TEAMS_FROM_ENV = (() => {
@@ -152,51 +143,30 @@ function AdminKeyModal({
 }
 
 function TeamRegistrationModal({
-  initialRegistrations,
-  onConfirm,
+  registrations,
   onClose,
 }: {
-  initialRegistrations: TeamRegistration[];
-  onConfirm: (registrations: TeamRegistration[]) => void;
+  registrations: TeamRegistration[];
   onClose: () => void;
 }) {
-  const [rows, setRows] = useState<TeamRegistration[]>(() =>
-    initialRegistrations.length > 0 ? [...initialRegistrations] : [{ apiKey: '', teamName: '' }],
-  );
-
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
-  const validRows = rows.filter((r) => r.apiKey.trim() || r.teamName.trim());
-
+  const validRows = registrations.filter((r) => r.apiKey.trim() || r.teamName.trim());
   const handleDownload = () => downloadJson(validRows, 'contest-teams.json');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onConfirm(validRows);
-  };
-
-  const addRow = () => setRows((prev) => [...prev, { apiKey: '', teamName: '' }]);
-  const removeRow = (index: number) =>
-    setRows((prev) => (prev.length === 1 ? [{ apiKey: '', teamName: '' }] : prev.filter((_, i) => i !== index)));
-  const updateRow = (index: number, field: keyof TeamRegistration, value: string) =>
-    setRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div className="relative z-10 w-full max-w-lg mx-4 bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
         <div className="flex items-center justify-between mb-4 shrink-0">
           <div>
             <h2 className="text-[16px] font-black text-text-primary">팀 설정</h2>
             <p className="text-[12px] font-bold text-text-tertiary mt-0.5">
-              {TEAMS_FROM_ENV
-                ? '환경변수(CONTEST_TEAMS_JSON)에서 로드됨 — 읽기 전용'
-                : '제출이 감지되면 이미지를 자동으로 생성합니다.'}
+              {TEAMS_FROM_ENV ? '환경변수(CONTEST_TEAMS_JSON)에서 로드됨' : '등록된 팀 없음 — 환경변수를 설정하세요.'}
             </p>
           </div>
           <button type="button" onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-text-tertiary hover:bg-slate-100 transition-all">
@@ -206,9 +176,8 @@ function TeamRegistrationModal({
           </button>
         </div>
 
-        {/* Table */}
-        {validRows.length > 0 && (
-          <div className="mb-4 rounded-lg border border-slate-200 overflow-hidden shrink-0">
+        {validRows.length > 0 ? (
+          <div className="mb-4 rounded-lg border border-slate-200 overflow-hidden">
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
@@ -226,59 +195,14 @@ function TeamRegistrationModal({
               </tbody>
             </table>
           </div>
+        ) : (
+          <div className="mb-4 h-20 rounded-lg border border-dashed border-slate-200 bg-slate-50 flex items-center justify-center text-[12px] font-bold text-text-tertiary">
+            등록된 팀이 없습니다.
+          </div>
         )}
 
-        {/* Edit form — only when not from env var */}
-        {!TEAMS_FROM_ENV && (
-          <>
-            <div className="grid grid-cols-[120px_1fr_32px] gap-2 mb-2 shrink-0 px-1">
-              <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider">팀 이름</div>
-              <div className="text-[11px] font-black text-text-tertiary uppercase tracking-wider">API key</div>
-              <div />
-            </div>
-            <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1">
-              <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-                {rows.map((row, index) => (
-                  <div key={index} className="grid grid-cols-[120px_1fr_32px] gap-2 items-center">
-                    <input type="text" value={row.teamName} onChange={(e) => updateRow(index, 'teamName', e.target.value)}
-                      className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] font-bold outline-none focus:border-accent-pro/50 focus:bg-white focus:ring-4 focus:ring-accent-pro/10 transition-all"
-                      placeholder="예) 1팀" />
-                    <input type="password" value={row.apiKey} onChange={(e) => updateRow(index, 'apiKey', e.target.value)}
-                      className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 font-mono text-[12px] font-bold outline-none focus:border-accent-pro/50 focus:bg-white focus:ring-4 focus:ring-accent-pro/10 transition-all"
-                      placeholder="sk-ant-..." />
-                    <button type="button" onClick={() => removeRow(index)}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg text-text-tertiary hover:bg-red-50 hover:text-red-500 transition-all">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <button type="button" onClick={addRow}
-                className="mt-3 h-9 w-full rounded-lg border border-dashed border-slate-300 text-text-tertiary text-[12px] font-black hover:border-accent-pro/40 hover:text-accent-pro transition-all shrink-0">
-                + 팀 추가
-              </button>
-              <div className="flex gap-2 mt-3 shrink-0">
-                <button type="button" onClick={handleDownload}
-                  className="h-11 px-4 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all flex items-center gap-1.5">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
-                  JSON 다운로드
-                </button>
-                <button type="button" onClick={onClose} className="flex-1 h-11 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all">취소</button>
-                <button type="submit" className="flex-1 h-11 rounded-xl bg-accent-pro text-white text-[13px] font-black hover:bg-accent-pro/90 transition-all">저장</button>
-              </div>
-            </form>
-          </>
-        )}
-
-        {/* Read-only footer when from env var */}
-        {TEAMS_FROM_ENV && (
-          <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 shrink-0">
+          {validRows.length > 0 && (
             <button type="button" onClick={handleDownload}
               className="h-11 px-4 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all flex items-center gap-1.5">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -288,9 +212,9 @@ function TeamRegistrationModal({
               </svg>
               JSON 다운로드
             </button>
-            <button type="button" onClick={onClose} className="flex-1 h-11 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all">닫기</button>
-          </div>
-        )}
+          )}
+          <button type="button" onClick={onClose} className="flex-1 h-11 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all">닫기</button>
+        </div>
       </div>
     </div>
   );
@@ -518,11 +442,6 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
     setShowAdminKeyModal(false);
   }, []);
 
-  const handleRegistrationsConfirm = useCallback((registrations: TeamRegistration[]) => {
-    localStorage.setItem(TEAM_REGISTRATIONS_STORAGE, JSON.stringify(registrations));
-    setTeamRegistrations(registrations);
-    setShowRegistrationModal(false);
-  }, []);
 
   const resolveTeamName = useCallback((apiKeyPreview: string, fallback: string) => {
     const reg = teamRegistrations.find(
@@ -679,7 +598,7 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
         <AdminKeyModal initialKey={adminKey} onConfirm={handleAdminKeyConfirm} onClose={() => setShowAdminKeyModal(false)} />
       )}
       {showRegistrationModal && (
-        <TeamRegistrationModal initialRegistrations={teamRegistrations} onConfirm={handleRegistrationsConfirm} onClose={() => setShowRegistrationModal(false)} />
+        <TeamRegistrationModal registrations={teamRegistrations} onClose={() => setShowRegistrationModal(false)} />
       )}
       {comparisonResult && (
         <ComparisonModal result={comparisonResult} sharedImage={sharedImage} onClose={() => setComparisonResult(null)} />
