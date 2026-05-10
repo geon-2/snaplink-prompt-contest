@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import mimetypes
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -180,11 +181,15 @@ def _generate_images_for_submission(
 
         try:
             run_id = uuid4().hex
+            base_image_data, base_image_mime_type = storage_service.download_object(_shared_image_s3_key(settings))
+            resolved_base_image_mime_type = base_image_mime_type or "image/png"
             image_keys: list[str] = []
             for index in range(1, FINAL_IMAGE_COUNT + 1):
                 image_event = _generate_single_image(
                     api_key=api_key,
                     prompt=submission.prompt,
+                    base_image_data=base_image_data,
+                    base_image_mime_type=resolved_base_image_mime_type,
                     gemini_service=gemini_service,
                 )
                 image_key = _build_final_submission_image_s3_key(
@@ -214,13 +219,28 @@ def _generate_single_image(
     *,
     api_key: str,
     prompt: str,
+    base_image_data: bytes,
+    base_image_mime_type: str,
     gemini_service: GeminiService,
 ) -> GeminiImageEvent:
     events = gemini_service.generate_content(
         api_key=api_key,
         model=gemini_service.image_model,
         payload={
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "inlineData": {
+                                "mimeType": base_image_mime_type,
+                                "data": base64.b64encode(base_image_data).decode("utf-8"),
+                            }
+                        },
+                        {"text": prompt},
+                    ],
+                }
+            ],
             "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
         },
     )
@@ -267,6 +287,12 @@ def _build_final_submission_image_s3_key(
             f"image-{index}{_extension_from_mime_type(mime_type)}",
         ]
     )
+    return f"{prefix}/{key}" if prefix else key
+
+
+def _shared_image_s3_key(settings: Settings) -> str:
+    prefix = settings.s3_prefix.strip("/")
+    key = "admin/shared-image/latest"
     return f"{prefix}/{key}" if prefix else key
 
 
