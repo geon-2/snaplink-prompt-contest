@@ -27,6 +27,13 @@ const ADMIN_KEY_STORAGE = 'pa_admin_review_key';
 const TEAM_REGISTRATIONS_STORAGE = 'pa_team_registrations';
 
 function loadRegistrations(): TeamRegistration[] {
+  const envJson = import.meta.env.VITE_CONTEST_TEAMS_JSON;
+  if (envJson) {
+    try {
+      const parsed = JSON.parse(envJson);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch { /* fall through to localStorage */ }
+  }
   try {
     const raw = localStorage.getItem(TEAM_REGISTRATIONS_STORAGE);
     if (!raw) return [{ apiKey: '', teamName: '' }];
@@ -37,6 +44,15 @@ function loadRegistrations(): TeamRegistration[] {
     return [{ apiKey: '', teamName: '' }];
   }
 }
+
+const TEAMS_FROM_ENV = (() => {
+  const envJson = import.meta.env.VITE_CONTEST_TEAMS_JSON;
+  if (!envJson) return false;
+  try {
+    const parsed = JSON.parse(envJson);
+    return Array.isArray(parsed) && parsed.length > 0;
+  } catch { return false; }
+})();
 
 function apiKeyMatchesPreview(apiKey: string, preview: string): boolean {
   if (!apiKey.trim() || !preview) return false;
@@ -614,12 +630,14 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
               {adminKey.trim() ? '키 변경' : '관리자 키 입력'}
             </span>
           </button>
-          <button type="button" onClick={() => setShowRegistrationModal(true)}
-            className={`h-9 px-3 rounded-lg border text-[12px] font-black transition-all ${
-              teamRegistrations.some((r) => r.apiKey.trim()) ? 'border-slate-300 bg-white text-text-primary hover:bg-slate-50' : 'border-slate-200 bg-slate-50 text-text-secondary hover:bg-slate-100'
-            }`}>
-            팀 등록
-          </button>
+          {!TEAMS_FROM_ENV && (
+            <button type="button" onClick={() => setShowRegistrationModal(true)}
+              className={`h-9 px-3 rounded-lg border text-[12px] font-black transition-all ${
+                teamRegistrations.some((r) => r.apiKey.trim()) ? 'border-slate-300 bg-white text-text-primary hover:bg-slate-50' : 'border-slate-200 bg-slate-50 text-text-secondary hover:bg-slate-100'
+              }`}>
+              팀 등록
+            </button>
+          )}
           <button type="button" onClick={loadReviewData} disabled={isLoading}
             className="h-9 px-3 rounded-lg bg-accent-pro text-white text-[12px] font-black hover:bg-accent-pro/90 transition-all disabled:opacity-50">
             {isLoading ? '새로고침 중...' : '새로고침'}
