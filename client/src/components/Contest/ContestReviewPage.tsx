@@ -32,8 +32,8 @@ function loadRegistrations(): TeamRegistration[] {
       const parsed = JSON.parse(envJson);
       if (Array.isArray(parsed) && parsed.length > 0) {
         const normalized = parsed.map((item) => ({
-          apiKey: typeof item?.apiKey === 'string' ? item.apiKey : '',
-          teamName: typeof item?.teamName === 'string' ? item.teamName : '',
+          apiKey: typeof item?.apiKey === 'string' ? item.apiKey : (typeof item?.api_key === 'string' ? item.api_key : ''),
+          teamName: typeof item?.teamName === 'string' ? item.teamName : (typeof item?.team_name === 'string' ? item.team_name : ''),
         }));
         if (normalized.some((r) => r.apiKey || r.teamName)) return normalized;
       }
@@ -162,7 +162,8 @@ function TeamRegistrationModal({
   }, [onClose]);
 
   const validRows = registrations.filter((r) => r.apiKey?.trim() || r.teamName?.trim());
-  const handleDownload = () => downloadJson(validRows, 'contest-teams.json');
+  const EXAMPLE = [{ apiKey: 'sk-ant-api03-...', teamName: '1팀' }, { apiKey: 'sk-ant-api03-...', teamName: '2팀' }];
+  const handleDownload = () => downloadJson(validRows.length > 0 ? validRows : EXAMPLE, 'contest-teams.json');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
@@ -208,17 +209,15 @@ function TeamRegistrationModal({
         )}
 
         <div className="flex gap-2 shrink-0">
-          {validRows.length > 0 && (
-            <button type="button" onClick={handleDownload}
-              className="h-11 px-4 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all flex items-center gap-1.5">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              JSON 다운로드
-            </button>
-          )}
+          <button type="button" onClick={handleDownload}
+            className="h-11 px-4 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all flex items-center gap-1.5">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            {validRows.length > 0 ? 'JSON 다운로드' : '예제 JSON 다운로드'}
+          </button>
           <button type="button" onClick={onClose} className="flex-1 h-11 rounded-xl border border-slate-200 text-text-secondary text-[13px] font-black hover:bg-slate-50 transition-all">닫기</button>
         </div>
       </div>
