@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     cookie_max_age: int = 604800
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    database_pool_size: int = 20
+    database_max_overflow: int = 40
+    database_pool_timeout: int = 30
+    database_pool_recycle: int = 1800
     gemini_base_url: str = "https://generativelanguage.googleapis.com"
     gemini_model: str = "gemini-3.1-pro-preview"
     gemini_image_model: str = "gemini-3-pro-image-preview"
