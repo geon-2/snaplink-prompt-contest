@@ -296,6 +296,10 @@ export class UnauthorizedError extends Error {
   constructor() { super('unauthorized'); }
 }
 
+export class AlreadySubmittedError extends Error {
+  constructor() { super('already_submitted'); }
+}
+
 export async function fetchChats(uuid: string): Promise<ChatListItem[]> {
   const resp = await fetch(`${API_BASE}/chats?uuid=${uuid}`, {
     credentials: 'include',
@@ -907,7 +911,10 @@ export async function submitContestPrompts(prompt: string, _promptB?: string): P
   });
   const body = await resp.json().catch(() => ({}));
   if (!resp.ok) {
-    const detail = stringValue(asRecord(body)?.detail);
+    const detail = stringValue(asRecord(body)?.detail) ?? '';
+    if (/already\s*submitted|already\s*exist|duplicate/i.test(detail)) {
+      throw new AlreadySubmittedError();
+    }
     throw new Error(detail || `최종 프롬프트 제출 실패 (${resp.status})`);
   }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchContestMe, submitContestPrompts } from '../../services/api';
+import { AlreadySubmittedError, fetchContestMe, submitContestPrompts } from '../../services/api';
 import type { ContestMe, ContestSubmission } from '../../types';
 
 interface ContestSubmitPageProps {
@@ -14,6 +14,31 @@ function formatSubmittedAt(value?: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function AlreadySubmittedModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[9500] flex items-center justify-center bg-black/40 backdrop-blur-[3px] p-4 animate-fadeIn">
+      <div className="w-full max-w-[360px] bg-white rounded-lg shadow-2xl border border-slate-200 p-6">
+        <div className="w-11 h-11 rounded-lg bg-accent-pro/10 text-accent-pro flex items-center justify-center mb-4">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </div>
+        <h3 className="text-[16px] font-black text-text-primary mb-2">이미 제출되었습니다</h3>
+        <p className="text-[13px] font-bold text-text-secondary leading-relaxed">
+          해당 API key로 이미 최종 프롬프트가 제출되었습니다. 중복 제출은 허용되지 않습니다.
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full h-10 mt-6 rounded-lg bg-slate-100 text-text-secondary text-[13px] font-black hover:bg-slate-200 transition-all"
+        >
+          확인
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function ConfirmSubmitModal({
@@ -91,6 +116,7 @@ export default function ContestSubmitPage({ onBackToChat }: ContestSubmitPagePro
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showAlreadySubmitted, setShowAlreadySubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submitted = Boolean(me?.submitted && me.submission);
@@ -128,7 +154,11 @@ export default function ContestSubmitPage({ onBackToChat }: ContestSubmitPagePro
       });
       setShowConfirm(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '최종 프롬프트 제출에 실패했습니다.');
+      if (err instanceof AlreadySubmittedError) {
+        setShowAlreadySubmitted(true);
+      } else {
+        setError(err instanceof Error ? err.message : '최종 프롬프트 제출에 실패했습니다.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -223,6 +253,9 @@ export default function ContestSubmitPage({ onBackToChat }: ContestSubmitPagePro
           onCancel={() => setShowConfirm(false)}
           onConfirm={handleSubmit}
         />
+      )}
+      {showAlreadySubmitted && (
+        <AlreadySubmittedModal onClose={() => setShowAlreadySubmitted(false)} />
       )}
     </div>
   );
