@@ -394,6 +394,11 @@ function AfterImageGrid({
                   <span className={`text-[10px] font-black ${result.status === 'failed' ? 'text-red-400' : 'text-slate-400'}`}>
                     {result.status === 'failed' ? '생성 실패' : result.status === 'generating' ? '생성 중...' : '대기 중'}
                   </span>
+                  {result.status === 'failed' && result.error_message && (
+                    <span className="mt-1 px-2 text-[9px] font-bold text-red-400 text-center leading-snug line-clamp-3 break-all">
+                      {result.error_message}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
