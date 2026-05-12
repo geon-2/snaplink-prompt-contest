@@ -455,6 +455,18 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
     return reg?.teamName?.trim() || fallback;
   }, [teamRegistrations]);
 
+  const registeredKeys = useMemo(
+    () => teamRegistrations.map((r) => r.apiKey?.trim()).filter(Boolean) as string[],
+    [teamRegistrations],
+  );
+
+  const filteredTeams = useMemo(() => {
+    if (registeredKeys.length === 0) return teams;
+    return teams.filter((team) =>
+      registeredKeys.some((key) => apiKeyMatchesPreview(key, team.api_key_preview)),
+    );
+  }, [teams, registeredKeys]);
+
   const generatedResults = useMemo(() => selectedSubmission?.results ?? [], [selectedSubmission]);
 
   const selectedTeamPreview = useMemo(
@@ -712,12 +724,12 @@ export default function ContestReviewPage({ onBackToChat }: ContestReviewPagePro
               )}
             </div>
             <div className="space-y-1.5">
-              {teams.length === 0 ? (
+              {filteredTeams.length === 0 ? (
                 <div className="h-24 rounded-lg border border-dashed border-slate-200 bg-slate-50 flex items-center justify-center text-[12px] font-bold text-text-tertiary">
                   제출 없음
                 </div>
               ) : (
-                teams.map((team) => (
+                filteredTeams.map((team) => (
                   <button key={team.team_id} type="button" onClick={() => setSelectedTeamId(team.team_id)}
                     className={`w-full text-left rounded-lg border p-3 transition-all ${
                       selectedTeamId === team.team_id ? 'bg-accent-pro/[0.04] border-accent-pro/25' : 'bg-white border-slate-200 hover:bg-slate-50'
