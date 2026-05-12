@@ -1,7 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { fetchContestAnalysisKeys, fetchContestAnalysisKeyDetail } from '../../services/api';
+import { getImageUrl } from '../../utils/s3';
 import type {
   ContestAnalysisApiKeyItem,
   ContestAnalysisEvent,
@@ -10,9 +11,7 @@ import type {
   ContestAnalysisSession,
 } from '../../types';
 import ImageModal from '../ImageModal/ImageModal';
-import { useAdminImage } from '../../hooks/useAdminImage';
 
-const AdminKeyContext = createContext('');
 
 function AdminKeyModal({
   initialKey,
@@ -374,6 +373,13 @@ function StatusPill({ event }: { event: ContestAnalysisEvent }) {
   return <span className={`rounded-md border px-2 py-1 text-[10px] font-black ${className}`}>{label}</span>;
 }
 
+function resolveImageUrl(image?: ContestAnalysisImage | null): string | null {
+  if (!image) return null;
+  if (image.s3_key) return getImageUrl(image.s3_key);
+  if (image.url) return image.url;
+  return null;
+}
+
 function ImageThumb({
   image,
   label,
@@ -383,26 +389,20 @@ function ImageThumb({
   label: string;
   onClick?: () => void;
 }) {
-  const adminKey = useContext(AdminKeyContext);
-  const { blobUrl, isLoading } = useAdminImage(image?.url, adminKey);
-  const displayUrl = blobUrl;
+  const displayUrl = resolveImageUrl(image);
 
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={!image?.url}
+      disabled={!displayUrl}
       className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 text-left transition-all enabled:hover:border-accent-pro/40 enabled:hover:shadow-sm"
     >
       <div className="flex h-7 items-center justify-between gap-2 border-b border-slate-200 bg-white px-2">
         <span className="truncate text-[10px] font-black uppercase tracking-wider text-text-tertiary">{label}</span>
       </div>
       <div className="aspect-square bg-slate-100">
-        {isLoading ? (
-          <div className="flex h-full items-center justify-center">
-            <div className="w-5 h-5 border-2 border-accent-pro/30 border-t-accent-pro rounded-full animate-spin" />
-          </div>
-        ) : displayUrl ? (
+        {displayUrl ? (
           <img src={displayUrl} alt={image?.title} className="h-full w-full object-contain" />
         ) : (
           <div className="flex h-full items-center justify-center px-3 text-center text-[11px] font-bold text-text-tertiary">
@@ -916,7 +916,7 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
   const selectedEventSession = selectedEvent ? sessionById.get(selectedEvent.session_id) ?? null : null;
 
   return (
-    <AdminKeyContext.Provider value={adminKey}>
+    <>
       <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg-primary text-text-primary">
         {showAdminKeyModal && (
           <AdminKeyModal
@@ -1160,12 +1160,12 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
 
         {modalImage && (
           <ImageModal
-            src={modalImage.url}
+            src={resolveImageUrl(modalImage) ?? modalImage.url}
             s3Key={modalImage.s3_key ?? undefined}
             onClose={() => setModalImage(null)}
           />
         )}
       </div>
-    </AdminKeyContext.Provider>
+    </>
   );
 }
