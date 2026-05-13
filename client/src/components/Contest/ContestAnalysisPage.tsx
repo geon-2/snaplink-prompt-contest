@@ -770,6 +770,7 @@ function EventBubble({
 
   return (
     <button
+      id={`event-${event.id}`}
       type="button"
       onClick={onSelect}
       className={`group flex w-full gap-3 px-6 py-4 text-left transition-all ${
@@ -947,11 +948,119 @@ function DetailPanel({
   );
 }
 
-function ImageGalleryTab() {
+function LazyImg({ src, alt, className }: { src: string; alt: string; className?: string }) {
+  const [shouldLoad, setShouldLoad] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShouldLoad(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '200px 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative h-full w-full bg-slate-100">
+      {!loaded && <div className="absolute inset-0 animate-pulse bg-slate-200" />}
+      {shouldLoad && (
+        <img
+          src={src}
+          alt={alt}
+          onLoad={() => setLoaded(true)}
+          className={`${className ?? ''} transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        />
+      )}
+    </div>
+  );
+}
+
+function GalleryImageModal({
+  item,
+  onClose,
+  onViewLogs,
+}: {
+  item: GeneratedImageHistoryItem;
+  onClose: () => void;
+  onViewLogs: (chatId: string, s3Key: string) => void;
+}) {
+  const url = getImageUrl(item.image_s3_key);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" />
+      <div
+        className="relative z-10 mx-4 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div className="text-[13px] font-black text-text-primary">생성 이미지</div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-text-tertiary hover:bg-slate-100"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-hidden bg-slate-900">
+          <img src={url} alt="생성 이미지" className="h-full w-full object-contain" />
+        </div>
+
+        <div className="shrink-0 border-t border-slate-200 bg-white p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              <div className="text-[11px] font-bold text-text-tertiary">
+                {new Date(item.created_at).toLocaleString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </div>
+              <div className="font-mono text-[10px] text-text-tertiary opacity-70">
+                chat: {item.chat_id.slice(0, 12)}…
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => { onViewLogs(item.chat_id, item.image_s3_key); onClose(); }}
+              className="flex h-9 shrink-0 items-center gap-2 rounded-lg bg-accent-pro px-4 text-[12px] font-black text-white transition-all hover:bg-accent-pro/90"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+              로그 보기
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImageGalleryTab({ onViewLogs }: { onViewLogs: (chatId: string, s3Key: string) => void }) {
   const [images, setImages] = useState<GeneratedImageHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [modalUrl, setModalUrl] = useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = useState<GeneratedImageHistoryItem | null>(null);
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
 
   useEffect(() => {
@@ -989,8 +1098,10 @@ function ImageGalleryTab() {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         {isLoading ? (
-          <div className="flex h-48 items-center justify-center text-[13px] font-bold text-text-tertiary">
-            불러오는 중...
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            {Array.from({ length: 18 }).map((_, i) => (
+              <div key={i} className="aspect-square animate-pulse rounded-xl bg-slate-200" style={{ animationDelay: `${i * 40}ms` }} />
+            ))}
           </div>
         ) : error ? (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[12px] font-bold text-red-600">
@@ -1008,15 +1119,14 @@ function ImageGalleryTab() {
                 <button
                   key={item.history_id}
                   type="button"
-                  onClick={() => setModalUrl(url)}
-                  className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm transition-all hover:border-accent-pro/40 hover:shadow-md"
+                  onClick={() => setSelectedItem(item)}
+                  className="group overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm transition-all hover:border-accent-pro/40 hover:shadow-md"
                 >
-                  <div className="aspect-square w-full overflow-hidden bg-slate-100">
-                    <img
+                  <div className="aspect-square w-full overflow-hidden">
+                    <LazyImg
                       src={url}
                       alt={`생성 이미지 #${item.history_id}`}
-                      className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                      loading="lazy"
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
                   </div>
                   <div className="border-t border-slate-200 bg-white px-2 py-1.5">
@@ -1034,8 +1144,12 @@ function ImageGalleryTab() {
         )}
       </div>
 
-      {modalUrl && (
-        <ImageModal src={modalUrl} onClose={() => setModalUrl(null)} />
+      {selectedItem && (
+        <GalleryImageModal
+          item={selectedItem}
+          onClose={() => setSelectedItem(null)}
+          onViewLogs={onViewLogs}
+        />
       )}
     </div>
   );
@@ -1051,6 +1165,7 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
   const [selectedApiKey, setSelectedApiKey] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [pendingNav, setPendingNav] = useState<{ chatId: string; s3Key: string } | null>(null);
   const [search, setSearch] = useState('');
   const [apiFilter, setApiFilter] = useState<ApiKeyFilter>('all');
   const [eventFilter, setEventFilter] = useState<EventFilter>('all');
@@ -1227,6 +1342,42 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
 
   const selectedEventSession = selectedEvent ? sessionById.get(selectedEvent.session_id) ?? null : null;
 
+  const handleViewLogs = useCallback((chatId: string, s3Key: string) => {
+    const targetItem = items.find((item) => item.sessions.some((s) => s.session_id === chatId));
+    if (targetItem) {
+      setSelectedApiKey(targetItem.api_key);
+      setSelectedSessionId(chatId);
+      setPendingNav({ chatId, s3Key });
+    }
+    setActiveTab('logs');
+  }, [items]);
+
+  useEffect(() => {
+    if (!pendingNav) return;
+    if (isLoadingDetail) return;
+
+    const session = selectedItem?.sessions.find((s) => s.session_id === pendingNav.chatId);
+    if (!session) { setPendingNav(null); return; }
+
+    // detail이 아직 로드 안 됐으면 기다림
+    if (!loadedKeysRef.current.has(selectedApiKey ?? '') && session.events.length === 0) return;
+
+    const event = session.events.find((e) =>
+      e.after_image?.s3_key === pendingNav.s3Key ||
+      e.before_image?.s3_key === pendingNav.s3Key ||
+      e.images.some((img) => img.s3_key === pendingNav.s3Key),
+    );
+
+    if (event) {
+      setSelectedEventId(event.id);
+      setTimeout(() => {
+        document.getElementById(`event-${event.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 150);
+    }
+
+    setPendingNav(null);
+  }, [pendingNav, isLoadingDetail, selectedItem, selectedApiKey]);
+
   return (
     <>
       <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg-primary text-text-primary">
@@ -1306,7 +1457,7 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
 
         {activeTab === 'gallery' ? (
           <main className="min-h-0 flex-1 overflow-hidden">
-            <ImageGalleryTab />
+            <ImageGalleryTab onViewLogs={handleViewLogs} />
           </main>
         ) : null}
         <main className={`grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)_400px] lg:overflow-hidden ${activeTab !== 'logs' ? 'hidden' : ''}`}>
