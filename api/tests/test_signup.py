@@ -550,11 +550,7 @@ def test_generated_image_history_api_returns_all_chats_with_header(
     )
     assert gallery_response.status_code == 200
     gallery_payload = gallery_response.json()
-    assert {
-        item["image_s3_key"]
-        for item in gallery_payload
-    } == expected_all_keys
-    assert len({item["history_id"] for item in gallery_payload}) == 3
+    assert set(gallery_payload) == expected_all_keys
 
 
 def test_chat_title_can_be_updated_only_for_owned_chat(

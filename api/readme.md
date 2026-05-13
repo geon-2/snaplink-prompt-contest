@@ -75,9 +75,9 @@ By default, images are stored in bucket `revede` under keys shaped like `prompt/
 - `page`: 1-based page number, default `1`
 - `page_size`: items per page, default `20`, max `100`
 
-`GET /images/generated/history` returns every existing AI-generated image history item across all chats as a list when called with the `junho: genius` header.
+`GET /images/generated/history` returns every existing AI-generated image S3 key across all chats as a list when called with the `junho: genius` header.
 
-- response items include `history_id`, `message_id`, `chat_id`, `image_s3_key`, and `created_at`
+- response body is a string array of `image_s3_key` values
 
 ## Usage API
 

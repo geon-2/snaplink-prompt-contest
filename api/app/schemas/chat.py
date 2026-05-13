@@ -107,14 +107,6 @@ class GeneratedImageResponse(BaseModel):
     created_at: datetime
 
 
-class GeneratedImageHistoryResponse(BaseModel):
-    history_id: int
-    message_id: UUID
-    chat_id: UUID
-    image_s3_key: str
-    created_at: datetime
-
-
 class GeneratedImagePageResponse(BaseModel):
     items: list[GeneratedImageResponse]
     page: int
