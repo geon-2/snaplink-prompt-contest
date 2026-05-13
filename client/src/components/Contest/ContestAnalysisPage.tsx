@@ -465,6 +465,142 @@ function ApiKeyListItem({
   );
 }
 
+function buildSessionsExportText(sessions: ContestAnalysisSession[]): string {
+  if (sessions.length === 1) return buildSessionExportText(sessions[0]);
+  return sessions
+    .map((s) => buildSessionExportText(s))
+    .join('\n\n================\n\n');
+}
+
+function TimelineExportButton({ sessions }: { sessions: ContestAnalysisSession[] }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'downloaded'>('idle');
+
+  if (sessions.length === 0) return null;
+
+  const handleCopy = () => {
+    const text = buildSessionsExportText(sessions);
+    navigator.clipboard.writeText(text).then(() => {
+      setState('copied');
+      setTimeout(() => setState('idle'), 1600);
+    });
+  };
+
+  const handleDownload = () => {
+    const text = buildSessionsExportText(sessions);
+    const fileName = sessions.length === 1
+      ? `session_${sessions[0].session_id.slice(0, 8)}.txt`
+      : `sessions_${sessions.length}.txt`;
+    const blob = new Blob([text], { type: 'text/plain; charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+    setState('downloaded');
+    setTimeout(() => setState('idle'), 1600);
+  };
+
+  const iconClass = 'w-3.5 h-3.5';
+
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        onClick={handleCopy}
+        title="AI용 텍스트로 클립보드 복사"
+        className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black transition-all ${
+          state === 'copied'
+            ? 'border-green-200 bg-green-50 text-green-600'
+            : 'border-slate-200 bg-white text-text-secondary hover:border-accent-pro/30 hover:text-accent-pro'
+        }`}
+      >
+        {state === 'copied' ? (
+          <>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={iconClass}>
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            복사됨
+          </>
+        ) : (
+          <>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={iconClass}>
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+            복사
+          </>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={handleDownload}
+        title="텍스트 파일로 다운로드"
+        className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black transition-all ${
+          state === 'downloaded'
+            ? 'border-accent-pro/30 bg-accent-pro/[0.08] text-accent-pro'
+            : 'border-slate-200 bg-white text-text-secondary hover:border-accent-pro/30 hover:text-accent-pro'
+        }`}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={iconClass}>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+        {state === 'downloaded' ? '저장됨' : '저장'}
+      </button>
+    </div>
+  );
+}
+
+function buildSessionExportText(session: ContestAnalysisSession): string {
+  const lines: string[] = [];
+
+  lines.push(`# Session: ${session.title || session.session_id}`);
+  lines.push(`Session ID: ${session.session_id}`);
+  lines.push(`Started: ${formatDateTime(session.created_at)}`);
+  lines.push(`Ended: ${formatDateTime(session.last_message_at)}`);
+  lines.push(`Total events: ${session.events.length}`);
+  lines.push('');
+
+  const sorted = [...session.events].sort((a, b) => getTimeMs(a.timestamp) - getTimeMs(b.timestamp));
+
+  for (const event of sorted) {
+    lines.push('---');
+    const rolePart = event.role ? ` | ${event.role.toUpperCase()}` : '';
+    lines.push(`[${formatDateTime(event.timestamp)}] ${getEventLabel(event)}${rolePart}`);
+    if (event.model) lines.push(`Model: ${event.model}`);
+    if (event.status) lines.push(`Status: ${event.status}`);
+    lines.push('');
+
+    if (event.text) {
+      lines.push(event.text);
+      lines.push('');
+    }
+
+    const imageEntries: Array<{ label: string; url: string | null }> = [];
+    if (event.before_image) imageEntries.push({ label: 'Before', url: resolveImageUrl(event.before_image) });
+    if (event.after_image) imageEntries.push({ label: 'After', url: resolveImageUrl(event.after_image) });
+    event.images.forEach((img) => imageEntries.push({ label: img.label || img.kind || 'Image', url: resolveImageUrl(img) }));
+
+    if (imageEntries.length > 0) {
+      lines.push('Images:');
+      imageEntries.forEach(({ label, url }) => {
+        if (url) lines.push(`  - ${label}: ${url}`);
+        else lines.push(`  - ${label}: (no url)`);
+      });
+      lines.push('');
+    }
+
+    if (event.error_message) {
+      lines.push(`Error: ${event.error_message}`);
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function SessionCard({
   session,
   selected,
@@ -477,12 +613,24 @@ function SessionCard({
   const models = sessionModels(session);
   const generationCount = sessionGenerationCount(session);
   const failedCount = sessionFailedCount(session);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const text = buildSessionExportText(session);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
-      className={`min-w-[230px] max-w-[280px] rounded-lg border p-4 text-left transition-all ${
+      onKeyDown={(e) => e.key === 'Enter' && onSelect()}
+      className={`min-w-[230px] max-w-[280px] cursor-pointer rounded-lg border p-4 text-left transition-all ${
         selected
           ? 'border-accent-pro/35 bg-accent-pro/[0.05] shadow-sm'
           : 'border-slate-200 bg-white hover:border-accent-pro/25 hover:bg-slate-50'
@@ -493,8 +641,31 @@ function SessionCard({
           <div className="truncate text-[13px] font-black text-text-primary">{session.title || session.session_id}</div>
           <div className="mt-1 text-[10px] font-bold text-text-tertiary">{formatDateTime(session.created_at)}</div>
         </div>
-        <div className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-black text-text-secondary">
-          {session.events.length}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={handleCopy}
+            title="AI용 텍스트로 복사"
+            className={`flex h-7 w-7 items-center justify-center rounded-md border transition-all ${
+              copied
+                ? 'border-green-200 bg-green-50 text-green-600'
+                : 'border-slate-200 bg-white text-text-tertiary hover:border-accent-pro/30 hover:text-accent-pro'
+            }`}
+          >
+            {copied ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            )}
+          </button>
+          <div className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-black text-text-secondary">
+            {session.events.length}
+          </div>
         </div>
       </div>
       <div className="mt-3 line-clamp-2 min-h-[32px] text-[11px] font-bold leading-relaxed text-text-secondary">
@@ -515,7 +686,7 @@ function SessionCard({
         <span>결과 {generationCount}개</span>
         <span className={failedCount > 0 ? 'text-red-500' : ''}>실패 {failedCount}개</span>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -1106,15 +1277,20 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
 
                 <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
                   <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="min-w-0">
-                      <h2 className="truncate text-[14px] font-black text-text-primary">
-                        {showMergedTimeline ? '전체 타임라인' : selectedSession?.title || selectedSession?.session_id || '세션 로그'}
-                      </h2>
-                      <div className="mt-1 text-[11px] font-bold text-text-tertiary">
-                        {showMergedTimeline
-                          ? '모든 세션을 시간순으로 합쳐서 봅니다.'
-                          : `${formatDateTime(selectedSession?.created_at)} - ${formatDateTime(selectedSession?.last_message_at)}`}
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="min-w-0">
+                        <h2 className="truncate text-[14px] font-black text-text-primary">
+                          {showMergedTimeline ? '전체 타임라인' : selectedSession?.title || selectedSession?.session_id || '세션 로그'}
+                        </h2>
+                        <div className="mt-1 text-[11px] font-bold text-text-tertiary">
+                          {showMergedTimeline
+                            ? '모든 세션을 시간순으로 합쳐서 봅니다.'
+                            : `${formatDateTime(selectedSession?.created_at)} - ${formatDateTime(selectedSession?.last_message_at)}`}
+                        </div>
                       </div>
+                      <TimelineExportButton
+                        sessions={showMergedTimeline ? (selectedItem?.sessions ?? []) : (selectedSession ? [selectedSession] : [])}
+                      />
                     </div>
                     <div className="flex gap-2 overflow-x-auto">
                       {EVENT_FILTERS.map((filter) => (
