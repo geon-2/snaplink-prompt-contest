@@ -472,83 +472,126 @@ function buildSessionsExportText(sessions: ContestAnalysisSession[]): string {
     .join('\n\n================\n\n');
 }
 
-function TimelineExportButton({ sessions }: { sessions: ContestAnalysisSession[] }) {
-  const [state, setState] = useState<'idle' | 'copied' | 'downloaded'>('idle');
-
-  if (sessions.length === 0) return null;
+function useExportActions(getSessions: () => ContestAnalysisSession[], fileNameHint: string) {
+  const [copied, setCopied] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
 
   const handleCopy = () => {
-    const text = buildSessionsExportText(sessions);
+    const text = buildSessionsExportText(getSessions());
     navigator.clipboard.writeText(text).then(() => {
-      setState('copied');
-      setTimeout(() => setState('idle'), 1600);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
     });
   };
 
   const handleDownload = () => {
-    const text = buildSessionsExportText(sessions);
-    const fileName = sessions.length === 1
-      ? `session_${sessions[0].session_id.slice(0, 8)}.txt`
-      : `sessions_${sessions.length}.txt`;
+    const text = buildSessionsExportText(getSessions());
     const blob = new Blob([text], { type: 'text/plain; charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = fileName;
+    a.download = fileNameHint;
     a.click();
     URL.revokeObjectURL(url);
-    setState('downloaded');
-    setTimeout(() => setState('idle'), 1600);
+    setDownloaded(true);
+    setTimeout(() => setDownloaded(false), 1600);
   };
 
-  const iconClass = 'w-3.5 h-3.5';
+  return { copied, downloaded, handleCopy, handleDownload };
+}
+
+function ExportToolbar({
+  allSessions,
+  currentSession,
+}: {
+  allSessions: ContestAnalysisSession[];
+  currentSession: ContestAnalysisSession | null;
+}) {
+  const currentHint = currentSession
+    ? `session_${currentSession.session_id.slice(0, 8)}.txt`
+    : 'session.txt';
+  const allHint = `sessions_all_${allSessions.length}.txt`;
+
+  const cur = useExportActions(() => (currentSession ? [currentSession] : allSessions), currentHint);
+  const all = useExportActions(() => allSessions, allHint);
+
+  const iconCopy = (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+  const iconCheck = (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+  const iconDownload = (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
 
   return (
-    <div className="flex shrink-0 items-center gap-1">
-      <button
-        type="button"
-        onClick={handleCopy}
-        title="AI용 텍스트로 클립보드 복사"
-        className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black transition-all ${
-          state === 'copied'
-            ? 'border-green-200 bg-green-50 text-green-600'
-            : 'border-slate-200 bg-white text-text-secondary hover:border-accent-pro/30 hover:text-accent-pro'
-        }`}
-      >
-        {state === 'copied' ? (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 text-[11px] font-black uppercase tracking-wider text-text-tertiary">채팅 내역 추출</div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={cur.handleCopy}
+          className={`flex h-9 items-center gap-2 rounded-lg border px-3 text-[12px] font-black transition-all ${
+            cur.copied
+              ? 'border-green-300 bg-green-50 text-green-700'
+              : 'border-slate-300 bg-white text-text-primary hover:border-accent-pro/40 hover:text-accent-pro'
+          }`}
+        >
+          {cur.copied ? iconCheck : iconCopy}
+          {cur.copied ? '복사됨' : '현재 세션 복사'}
+        </button>
+        <button
+          type="button"
+          onClick={cur.handleDownload}
+          className={`flex h-9 items-center gap-2 rounded-lg border px-3 text-[12px] font-black transition-all ${
+            cur.downloaded
+              ? 'border-accent-pro/40 bg-accent-pro/[0.08] text-accent-pro'
+              : 'border-slate-300 bg-white text-text-primary hover:border-accent-pro/40 hover:text-accent-pro'
+          }`}
+        >
+          {cur.downloaded ? iconCheck : iconDownload}
+          {cur.downloaded ? '저장됨' : '현재 세션 저장'}
+        </button>
+        {allSessions.length > 1 && (
           <>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={iconClass}>
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            복사됨
-          </>
-        ) : (
-          <>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={iconClass}>
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-            </svg>
-            복사
+            <div className="w-px self-stretch bg-slate-200" />
+            <button
+              type="button"
+              onClick={all.handleCopy}
+              className={`flex h-9 items-center gap-2 rounded-lg border px-3 text-[12px] font-black transition-all ${
+                all.copied
+                  ? 'border-green-300 bg-green-50 text-green-700'
+                  : 'border-slate-300 bg-white text-text-secondary hover:border-accent-pro/40 hover:text-accent-pro'
+              }`}
+            >
+              {all.copied ? iconCheck : iconCopy}
+              {all.copied ? '복사됨' : `전체 세션 복사 (${allSessions.length}개)`}
+            </button>
+            <button
+              type="button"
+              onClick={all.handleDownload}
+              className={`flex h-9 items-center gap-2 rounded-lg border px-3 text-[12px] font-black transition-all ${
+                all.downloaded
+                  ? 'border-accent-pro/40 bg-accent-pro/[0.08] text-accent-pro'
+                  : 'border-slate-300 bg-white text-text-secondary hover:border-accent-pro/40 hover:text-accent-pro'
+              }`}
+            >
+              {all.downloaded ? iconCheck : iconDownload}
+              {all.downloaded ? '저장됨' : `전체 세션 저장 (${allSessions.length}개)`}
+            </button>
           </>
         )}
-      </button>
-      <button
-        type="button"
-        onClick={handleDownload}
-        title="텍스트 파일로 다운로드"
-        className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black transition-all ${
-          state === 'downloaded'
-            ? 'border-accent-pro/30 bg-accent-pro/[0.08] text-accent-pro'
-            : 'border-slate-200 bg-white text-text-secondary hover:border-accent-pro/30 hover:text-accent-pro'
-        }`}
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={iconClass}>
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7 10 12 15 17 10" />
-          <line x1="12" y1="15" x2="12" y2="3" />
-        </svg>
-        {state === 'downloaded' ? '저장됨' : '저장'}
-      </button>
+      </div>
     </div>
   );
 }
@@ -1248,6 +1291,11 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
                     <SummaryStat label="실패" value={selectedItem.summary.failed_count} />
                     <SummaryStat label="마지막" value={formatDateTime(selectedItem.summary.last_activity_at)} />
                   </div>
+
+                  <ExportToolbar
+                    allSessions={selectedItem.sessions}
+                    currentSession={selectedSession}
+                  />
                 </div>
 
                 {!showMergedTimeline && (
@@ -1277,20 +1325,15 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
 
                 <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
                   <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="min-w-0">
-                        <h2 className="truncate text-[14px] font-black text-text-primary">
-                          {showMergedTimeline ? '전체 타임라인' : selectedSession?.title || selectedSession?.session_id || '세션 로그'}
-                        </h2>
-                        <div className="mt-1 text-[11px] font-bold text-text-tertiary">
-                          {showMergedTimeline
-                            ? '모든 세션을 시간순으로 합쳐서 봅니다.'
-                            : `${formatDateTime(selectedSession?.created_at)} - ${formatDateTime(selectedSession?.last_message_at)}`}
-                        </div>
+                    <div className="min-w-0">
+                      <h2 className="truncate text-[14px] font-black text-text-primary">
+                        {showMergedTimeline ? '전체 타임라인' : selectedSession?.title || selectedSession?.session_id || '세션 로그'}
+                      </h2>
+                      <div className="mt-1 text-[11px] font-bold text-text-tertiary">
+                        {showMergedTimeline
+                          ? '모든 세션을 시간순으로 합쳐서 봅니다.'
+                          : `${formatDateTime(selectedSession?.created_at)} - ${formatDateTime(selectedSession?.last_message_at)}`}
                       </div>
-                      <TimelineExportButton
-                        sessions={showMergedTimeline ? (selectedItem?.sessions ?? []) : (selectedSession ? [selectedSession] : [])}
-                      />
                     </div>
                     <div className="flex gap-2 overflow-x-auto">
                       {EVENT_FILTERS.map((filter) => (
