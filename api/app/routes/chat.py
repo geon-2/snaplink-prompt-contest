@@ -36,6 +36,7 @@ from app.schemas.chat import (
     ChatMessageResponse,
     ChatSummaryResponse,
     ChatTitleUpdateRequest,
+    GeneratedImageHistoryResponse,
     GeneratedImagePageResponse,
     GeneratedImageResponse,
     MessageRole,
@@ -592,6 +593,36 @@ def list_generated_images(
         total=total,
         has_next=offset + len(messages) < total,
     )
+
+
+@router.get("/images/generated/history", response_model=list[GeneratedImageHistoryResponse])
+def list_generated_image_history(
+    request: Request,
+    db_session: Session = Depends(get_db_session),
+) -> list[GeneratedImageHistoryResponse]:
+    if request.headers.get("junho") != "genius":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid image history key")
+
+    image_histories = db_session.scalars(
+        select(History)
+        .where(
+            History.role == MessageRole.ASSISTANT.value,
+            History.part_type == "image",
+            History.image_s3_key.is_not(None),
+        )
+        .order_by(History.created_at.desc(), History.id.desc())
+    ).all()
+
+    return [
+        GeneratedImageHistoryResponse(
+            history_id=history_row.id,
+            message_id=history_row.message_id,
+            chat_id=history_row.chat_id,
+            image_s3_key=history_row.image_s3_key or "",
+            created_at=history_row.created_at,
+        )
+        for history_row in image_histories
+    ]
 
 
 @router.get("/images/{s3_key:path}")

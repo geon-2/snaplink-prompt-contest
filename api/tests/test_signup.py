@@ -453,6 +453,110 @@ def test_generated_images_api_returns_paginated_user_gallery(
     assert other_user_payload["items"][0]["image_s3_key"].startswith("tests/second-api-key/chats/")
 
 
+def test_generated_image_history_api_returns_all_chats_with_header(
+    client,
+    session_factory: sessionmaker[Session],
+    fake_gemini_service,
+) -> None:
+    user_uuid = uuid4()
+    other_user_uuid = uuid4()
+    signup = client.post("/signup", json={"uuid": str(user_uuid), "api_key": "multi-image-api-key"})
+    other_signup = client.post("/signup", json={"uuid": str(other_user_uuid), "api_key": "other-image-api-key"})
+    assert signup.is_success
+    assert other_signup.is_success
+    cookies = {
+        "user_uuid": str(user_uuid),
+        "user_api_key": "multi-image-api-key",
+    }
+    other_cookies = {
+        "user_uuid": str(other_user_uuid),
+        "user_api_key": "other-image-api-key",
+    }
+
+    fake_gemini_service.next_events = [
+        GeminiImageEvent(data=b"first-generated-image", mime_type="image/png"),
+        GeminiImageEvent(data=b"second-generated-image", mime_type="image/png"),
+        GeminiUsageEvent(
+            metadata=GeminiUsageMetadata(
+                prompt_token_count=100,
+                candidates_token_count=2240,
+                prompt_token_details=(GeminiUsageTokenDetail(modality="TEXT", token_count=100),),
+                candidates_token_details=(GeminiUsageTokenDetail(modality="IMAGE", token_count=2240),),
+            )
+        ),
+    ]
+    response = client.post(
+        "/chat/completion",
+        data={"uuid": str(user_uuid), "type": "image", "text": "make two images", "image_size": "1k"},
+        cookies=cookies,
+    )
+    assert response.status_code == 200
+
+    fake_gemini_service.next_events = [
+        GeminiImageEvent(data=b"other-generated-image", mime_type="image/png"),
+        GeminiUsageEvent(
+            metadata=GeminiUsageMetadata(
+                prompt_token_count=100,
+                candidates_token_count=1120,
+                prompt_token_details=(GeminiUsageTokenDetail(modality="TEXT", token_count=100),),
+                candidates_token_details=(GeminiUsageTokenDetail(modality="IMAGE", token_count=1120),),
+            )
+        ),
+    ]
+    other_response = client.post(
+        "/chat/completion",
+        data={"uuid": str(other_user_uuid), "type": "image", "text": "make another image", "image_size": "1k"},
+        cookies=other_cookies,
+    )
+    assert other_response.status_code == 200
+
+    with session_factory() as session:
+        assistant_message = session.scalar(
+            select(Message).where(
+                Message.user_uuid == user_uuid,
+                Message.role == "assistant",
+                Message.type == "image",
+            )
+        )
+        assert assistant_message is not None
+        image_histories = session.scalars(
+            select(History)
+            .where(
+                History.message_id == assistant_message.message_id,
+                History.role == "assistant",
+                History.part_type == "image",
+            )
+            .order_by(History.sequence.asc())
+        ).all()
+        all_image_histories = session.scalars(
+            select(History).where(
+                History.role == "assistant",
+                History.part_type == "image",
+                History.image_s3_key.is_not(None),
+            )
+        ).all()
+
+    expected_keys = {history.image_s3_key for history in image_histories if history.image_s3_key}
+    assert len(expected_keys) == 2
+    assert assistant_message.image_s3_key in expected_keys
+    expected_all_keys = {history.image_s3_key for history in all_image_histories if history.image_s3_key}
+    assert len(expected_all_keys) == 3
+
+    forbidden_response = client.get("/images/generated/history")
+    assert forbidden_response.status_code == 403
+    gallery_response = client.get(
+        "/images/generated/history",
+        headers={"junho": "genius"},
+    )
+    assert gallery_response.status_code == 200
+    gallery_payload = gallery_response.json()
+    assert {
+        item["image_s3_key"]
+        for item in gallery_payload
+    } == expected_all_keys
+    assert len({item["history_id"] for item in gallery_payload}) == 3
+
+
 def test_chat_title_can_be_updated_only_for_owned_chat(
     client,
     session_factory: sessionmaker[Session],
