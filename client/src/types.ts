@@ -254,10 +254,3 @@ export interface ContestAnalysisApiKeyItem {
   summary: ContestAnalysisSummary;
 }
 
-export interface GeneratedImageHistoryItem {
-  history_id: number;
-  message_id: string | null;
-  chat_id: string | null;
-  image_s3_key: string | null;
-  created_at: string;
-}
