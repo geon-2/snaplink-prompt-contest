@@ -5,7 +5,8 @@ const CDN_BASE = 'https://datsbgc37wc3i.cloudfront.net';
  *
  * CloudFront 배포를 통해 이미지를 서빙하므로 CDN URL에 key만 붙인다.
  */
-export function getImageUrl(s3Key: string): string {
+export function getImageUrl(s3Key: string | null | undefined): string {
+  if (!s3Key) return '';
   if (s3Key.startsWith('http') || s3Key.startsWith('//')) {
     return s3Key;
   }

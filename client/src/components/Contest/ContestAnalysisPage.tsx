@@ -972,7 +972,7 @@ function LazyImg({ src, alt, className }: { src: string; alt: string; className?
   return (
     <div ref={containerRef} className="relative h-full w-full bg-slate-100">
       {!loaded && <div className="absolute inset-0 animate-pulse bg-slate-200" />}
-      {shouldLoad && (
+      {shouldLoad && src && (
         <img
           src={src}
           alt={alt}
