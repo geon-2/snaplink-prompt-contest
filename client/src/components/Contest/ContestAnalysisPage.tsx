@@ -1032,12 +1032,12 @@ function GalleryImageModal({
                 {new Date(item.created_at).toLocaleString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </div>
               <div className="font-mono text-[10px] text-text-tertiary opacity-70">
-                chat: {item.chat_id.slice(0, 12)}…
+                chat: {item.chat_id?.slice(0, 12) ?? '-'}
               </div>
             </div>
             <button
               type="button"
-              onClick={() => { onViewLogs(item.chat_id, item.image_s3_key); onClose(); }}
+              onClick={() => { if (item.chat_id && item.image_s3_key) onViewLogs(item.chat_id, item.image_s3_key); onClose(); }}
               className="flex h-9 shrink-0 items-center gap-2 rounded-lg bg-accent-pro px-4 text-[12px] font-black text-white transition-all hover:bg-accent-pro/90"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
@@ -1134,7 +1134,7 @@ function ImageGalleryTab({ onViewLogs }: { onViewLogs: (chatId: string, s3Key: s
                       {new Date(item.created_at).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </div>
                     <div className="mt-0.5 truncate font-mono text-[9px] text-text-tertiary opacity-60">
-                      {item.chat_id.slice(0, 8)}
+                      {item.chat_id?.slice(0, 8) ?? '-'}
                     </div>
                   </div>
                 </button>
