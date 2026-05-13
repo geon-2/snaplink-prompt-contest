@@ -253,3 +253,11 @@ export interface ContestAnalysisApiKeyItem {
   sessions: ContestAnalysisSession[];
   summary: ContestAnalysisSummary;
 }
+
+export interface GeneratedImageHistoryItem {
+  history_id: number;
+  message_id: string;
+  chat_id: string;
+  image_s3_key: string;
+  created_at: string;
+}

@@ -20,6 +20,7 @@ import type {
   ContestSubmission,
   ContestSubmissionStatus,
   ContestTeamSummary,
+  GeneratedImageHistoryItem,
 } from '../types';
 import { getUserApiKey } from './auth';
 
@@ -1036,6 +1037,20 @@ export async function fetchContestAnalysisKeyDetail(
     { api_key: item.api_key, masked_api_key: item.masked_api_key, sessions },
     0,
   );
+}
+
+/**
+ * GET /api/images/generated/history — 전체 AI 생성 이미지 히스토리
+ * 헤더: { junho: "genius" }
+ */
+export async function fetchGeneratedImageHistory(): Promise<GeneratedImageHistoryItem[]> {
+  const resp = await fetch(apiUrl('/images/generated/history'), {
+    credentials: 'include',
+    headers: { junho: 'genius' },
+  });
+  if (resp.status === 403) throw new Error('접근 권한이 없습니다. (junho: genius 헤더 필요)');
+  if (!resp.ok) throw new Error(`이미지 히스토리 로드 실패 (${resp.status})`);
+  return arrayValue(await resp.json()) as GeneratedImageHistoryItem[];
 }
 
 /**

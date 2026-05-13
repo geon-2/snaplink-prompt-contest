@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { fetchContestAnalysisKeys, fetchContestAnalysisKeyDetail } from '../../services/api';
+import { fetchContestAnalysisKeys, fetchContestAnalysisKeyDetail, fetchGeneratedImageHistory } from '../../services/api';
 import { getImageUrl } from '../../utils/s3';
 import type {
   ContestAnalysisApiKeyItem,
@@ -9,6 +9,7 @@ import type {
   ContestAnalysisEventKind,
   ContestAnalysisImage,
   ContestAnalysisSession,
+  GeneratedImageHistoryItem,
 } from '../../types';
 import ImageModal from '../ImageModal/ImageModal';
 
@@ -946,7 +947,104 @@ function DetailPanel({
   );
 }
 
+function ImageGalleryTab() {
+  const [images, setImages] = useState<GeneratedImageHistoryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [modalUrl, setModalUrl] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+
+  useEffect(() => {
+    setIsLoading(true);
+    setError(null);
+    fetchGeneratedImageHistory()
+      .then((data) => setImages(data))
+      .catch((err) => setError(err instanceof Error ? err.message : '이미지 히스토리를 불러오지 못했습니다.'))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const sorted = useMemo(() => {
+    const copy = [...images];
+    copy.sort((a, b) => {
+      const diff = Date.parse(b.created_at) - Date.parse(a.created_at);
+      return sortOrder === 'newest' ? diff : -diff;
+    });
+    return copy;
+  }, [images, sortOrder]);
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
+        <div className="text-[13px] font-black text-text-primary">
+          생성 이미지 전체
+          {images.length > 0 && (
+            <span className="ml-2 text-[11px] font-bold text-text-tertiary">{images.length}장</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <FilterButton active={sortOrder === 'newest'} label="최신순" onClick={() => setSortOrder('newest')} />
+          <FilterButton active={sortOrder === 'oldest'} label="오래된순" onClick={() => setSortOrder('oldest')} />
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        {isLoading ? (
+          <div className="flex h-48 items-center justify-center text-[13px] font-bold text-text-tertiary">
+            불러오는 중...
+          </div>
+        ) : error ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[12px] font-bold text-red-600">
+            {error}
+          </div>
+        ) : sorted.length === 0 ? (
+          <div className="flex h-48 items-center justify-center text-[13px] font-bold text-text-tertiary">
+            생성된 이미지가 없습니다.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            {sorted.map((item) => {
+              const url = getImageUrl(item.image_s3_key);
+              return (
+                <button
+                  key={item.history_id}
+                  type="button"
+                  onClick={() => setModalUrl(url)}
+                  className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm transition-all hover:border-accent-pro/40 hover:shadow-md"
+                >
+                  <div className="aspect-square w-full overflow-hidden bg-slate-100">
+                    <img
+                      src={url}
+                      alt={`생성 이미지 #${item.history_id}`}
+                      className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="border-t border-slate-200 bg-white px-2 py-1.5">
+                    <div className="truncate text-[10px] font-bold text-text-tertiary">
+                      {new Date(item.created_at).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    <div className="mt-0.5 truncate font-mono text-[9px] text-text-tertiary opacity-60">
+                      {item.chat_id.slice(0, 8)}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {modalUrl && (
+        <ImageModal src={modalUrl} onClose={() => setModalUrl(null)} />
+      )}
+    </div>
+  );
+}
+
+type AnalysisTab = 'logs' | 'gallery';
+
 export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPageProps) {
+  const [activeTab, setActiveTab] = useState<AnalysisTab>('logs');
   const [adminKey, setAdminKey] = useState(() => sessionStorage.getItem(ADMIN_KEY_STORAGE) ?? '');
   const [showAdminKeyModal, setShowAdminKeyModal] = useState(() => !sessionStorage.getItem(ADMIN_KEY_STORAGE));
   const [items, setItems] = useState<ContestAnalysisApiKeyItem[]>([]);
@@ -1154,7 +1252,26 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
             </button>
             <div className="min-w-0">
               <h1 className="truncate text-[16px] font-black text-text-primary">프롬프트 분석</h1>
-              <div className="truncate text-[11px] font-bold text-text-tertiary">API key별 세션 로그</div>
+            </div>
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab('logs')}
+                className={`h-7 rounded-md px-3 text-[12px] font-black transition-all ${
+                  activeTab === 'logs' ? 'bg-white text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-secondary'
+                }`}
+              >
+                로그 분석
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('gallery')}
+                className={`h-7 rounded-md px-3 text-[12px] font-black transition-all ${
+                  activeTab === 'gallery' ? 'bg-white text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-secondary'
+                }`}
+              >
+                이미지 갤러리
+              </button>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1187,7 +1304,12 @@ export default function ContestAnalysisPage({ onBackToChat }: ContestAnalysisPag
           </div>
         </header>
 
-        <main className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)_400px] lg:overflow-hidden">
+        {activeTab === 'gallery' ? (
+          <main className="min-h-0 flex-1 overflow-hidden">
+            <ImageGalleryTab />
+          </main>
+        ) : null}
+        <main className={`grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)_400px] lg:overflow-hidden ${activeTab !== 'logs' ? 'hidden' : ''}`}>
           <aside className="min-h-0 overflow-y-auto border-r border-border-default bg-white p-5">
             <section>
             <label className="block">
